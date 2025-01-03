@@ -19,6 +19,7 @@ var Options options = options{
 		Ptr:      [2]string{"33", "39;49"},
 		Property: [2]string{"90", "39;49"},
 		Func:     [2]string{"3;94", "39;49;23"},
+		Chan:     [2]string{"31", "39;49"},
 	},
 }
 
@@ -36,6 +37,7 @@ type colorMap struct {
 	Ptr      [2]string
 	Property [2]string
 	Func     [2]string
+	Chan     [2]string
 }
 
 func Println(a ...any) (n int, err error) {
@@ -166,7 +168,18 @@ func stringify(v reflect.Value, opt options, escapeString bool, showAliasName bo
 		}
 		return fmt.Sprintf("%s.%s%s", v.Type().PkgPath(), v.Type().Name(), body)
 	case reflect.Chan:
-		return "chan{}"
+		dr := ""
+		if v.Type().ChanDir() == reflect.RecvDir {
+			dr = "->"
+		} else if v.Type().ChanDir() == reflect.SendDir {
+			dr = "<-"
+		}
+
+		t := color(v.Type().Elem().Kind().String(), colors.Chan[0], colors.Chan[1])
+		if v.Cap() > 0 {
+			return fmt.Sprintf("chan(%s%s,%d/%d)", dr, t, v.Len(), v.Cap())
+		}
+		return fmt.Sprintf("chan(%s%s)", dr, t)
 	case reflect.Func:
 		pc := runtime.FuncForPC(v.Pointer())
 		return color(fmt.Sprintf("[Func: %s()]", pc.Name()), colors.Func[0], colors.Func[1])

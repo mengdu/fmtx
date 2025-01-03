@@ -20,7 +20,12 @@ type Data struct {
 	D      bool
 	E      []int
 	F      map[string]int
+	Nil    *int
 	fn     func() error
+	ch1    chan<- int
+	ch2    <-chan int
+	ch3    chan int
+	ch4    chan int
 	err    error
 	any    any
 	anyMap map[any]any
@@ -88,9 +93,14 @@ func main() {
 			"a": 1,
 			"b": 2,
 		},
+		Nil: nil,
 		fn: func() error {
 			return nil
 		},
+		ch1: make(chan<- int),
+		ch2: make(<-chan int),
+		ch3: make(chan int),
+		ch4: make(chan int, 4),
 		err: errors.New("some error"),
 		any: []any{ptr[string]},
 	}
@@ -106,6 +116,8 @@ func main() {
 	var readOnlyCh <-chan int
 	ch1 := make(chan int)
 	ch2 := make(chan int, 4)
+	ch2 <- 1
+	ch2 <- 2
 	fmtx.Println(sendOnlyCh, readOnlyCh, ch1, ch2)
 	fmtx.Println(errors.New("some error"))
 }
