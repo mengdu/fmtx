@@ -20,7 +20,12 @@ type Data struct {
 	D      bool
 	E      []int
 	F      map[string]int
-	Nil    *int
+	Nil1   *int
+	Nil2   *[]int
+	Nil3   *map[string]any
+	Nil4   *MyInt
+	Nil5   *Data
+	Nil6   chan int
 	fn     func() error
 	ch1    chan<- int
 	ch2    <-chan int
@@ -36,14 +41,26 @@ func (d Data) SayHello() {
 	d.hi()
 }
 
+func (Data) Fn(a int, b float32, c string, d map[string]any, e []int, f ...[]int) (int, error) {
+	return 0, nil
+}
+
 func (d Data) hi() {}
 
 func main() {
 	// fmtx.EnableColor = false
 	// fmtx.Options.MaxDepth = 5
+	var initMap map[string]int
+	var initArr [2]int
+	var initSlice []int
+	var initChan chan int
+	var initFn func() error
+	var initAny any
+	var initErr error
 	fmtx.Println("Hello, \nworld", ptr("Hi \"Tom\""))
 	fmtx.Println(true, false)
-	fmtx.Println(123, 3.14, ptr(124), MyInt(123), ptr(MyInt(123)))
+	fmtx.Println(123, 3.14, ptr(124), MyInt(123), ptr(MyInt(123)), complex64(1+2i), complex(3.5, -4.5))
+	fmtx.Println(initMap, initArr, initSlice, initChan, initFn, initAny, initErr)
 	fmtx.Println([]int{1, 2, 3, -1, -2})
 	fmtx.Println([]string{"a", "b", "c", "Hello \n \"world\"."})
 	fmtx.Println([]byte("Hello, \nworld"))
@@ -93,7 +110,7 @@ func main() {
 			"a": 1,
 			"b": 2,
 		},
-		Nil: nil,
+		Nil1: nil,
 		fn: func() error {
 			return nil
 		},
@@ -106,12 +123,14 @@ func main() {
 	}
 	data.loop = &data
 	data.anyMap = map[any]any{
-		1: data,
-		2: []any{data},
+		1: 1,
 	}
 
 	fmtx.Println(data)
-	fmtx.Println(ptr[int], fmt.Println, func(a any) {})
+	fn := func(a int, b float32, c string, d map[string]any, e []int, f ...[]int) error {
+		return nil
+	}
+	fmtx.Println(ptr[int], fmt.Println, func(a any) {}, fn)
 	var sendOnlyCh chan<- int
 	var readOnlyCh <-chan int
 	ch1 := make(chan int)

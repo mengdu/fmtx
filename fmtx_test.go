@@ -15,7 +15,17 @@ type Data struct {
 	D      bool
 	E      []int
 	F      map[string]int
+	Nil1   *int
+	Nil2   *[]int
+	Nil3   *map[string]any
+	Nil4   *MyInt
+	Nil5   *Data
+	Nil6   chan int
 	fn     func() error
+	ch1    chan<- int
+	ch2    <-chan int
+	ch3    chan int
+	ch4    chan int
 	err    error
 	any    any
 	anyMap map[any]any
@@ -24,6 +34,10 @@ type Data struct {
 
 func (d Data) SayHello() {
 	d.hi()
+}
+
+func (Data) Fn(a int, b float32, c string, d map[string]any, e []int, f ...[]int) (int, error) {
+	return 0, nil
 }
 
 func (d Data) hi() {}
@@ -39,16 +53,20 @@ func genData() Data {
 			"a": 1,
 			"b": 2,
 		},
+		Nil1: nil,
 		fn: func() error {
 			return nil
 		},
+		ch1: make(chan<- int),
+		ch2: make(<-chan int),
+		ch3: make(chan int),
+		ch4: make(chan int, 4),
 		err: errors.New("some error"),
-		any: []any{genData},
+		any: []any{},
 	}
 	data.loop = &data
 	data.anyMap = map[any]any{
-		1: data,
-		2: []any{data},
+		1: 1,
 	}
 	return data
 }
