@@ -12,6 +12,9 @@ func ptr[T any](a T) *T {
 }
 
 type MyInt int
+type MyFloat float32
+type MyString string
+type MyBool bool
 
 type Data struct {
 	A      int
@@ -20,6 +23,7 @@ type Data struct {
 	D      bool
 	E      []int
 	F      map[string]int
+	G      *map[string]int
 	Nil1   *int
 	Nil2   *[]int
 	Nil3   *map[string]any
@@ -37,15 +41,23 @@ type Data struct {
 	loop   *Data
 }
 
-func (d Data) SayHello() {
-	d.hi()
-}
-
-func (Data) Fn(a int, b float32, c string, d map[string]any, e []int, f ...[]int) (int, error) {
+func (d *Data) Method1() (int, error) {
 	return 0, nil
 }
 
-func (d Data) hi() {}
+func (d *Data) Method2() (string, error) {
+	return "", nil
+}
+
+func (d Data) Method3() (string, error) {
+	return "", nil
+}
+
+func (Data) Method4(a int, b float32, c string, d map[string]any, e []int, f func(a int) (int, error), g ...[]int) (int, error) {
+	return 0, nil
+}
+
+func (d Data) Method5() {}
 
 func main() {
 	// fmtx.EnableColor = false
@@ -59,7 +71,10 @@ func main() {
 	var initErr error
 	fmtx.Println("Hello, \nworld", ptr("Hi \"Tom\""))
 	fmtx.Println(true, false)
-	fmtx.Println(123, 3.14, ptr(124), MyInt(123), ptr(MyInt(123)), complex64(1+2i), complex(3.5, -4.5))
+	fmtx.Println(123, 3.14, ptr(124))
+	fmtx.Println(123, 3.14, complex64(1+2i), complex(3.5, -4.5))
+	fmtx.Println(MyInt(123), MyFloat(3.14), MyString("string"), MyBool(true))
+	fmtx.Println(ptr(MyInt(123)), ptr(MyFloat(3.14)), ptr(MyString("string")), ptr(MyBool(true)))
 	fmtx.Println(initMap, initArr, initSlice, initChan, initFn, initAny, initErr)
 	fmtx.Println([]int{1, 2, 3, -1, -2})
 	fmtx.Println([]string{"a", "b", "c", "Hello \n \"world\"."})
@@ -110,6 +125,7 @@ func main() {
 			"a": 1,
 			"b": 2,
 		},
+		G:    &map[string]int{},
 		Nil1: nil,
 		fn: func() error {
 			return nil

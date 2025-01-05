@@ -63,47 +63,59 @@ func stringify(v reflect.Value, opt options, escapeString bool, showAliasName bo
 	case reflect.Ptr:
 		val := ""
 		if v.IsNil() {
-			val = fmt.Sprintf("%s<%s>", getType(v.Type()), color("nil", colors.Nil[0], colors.Nil[1]))
+			typ := getType(v.Type())
+			typ = strings.TrimPrefix(typ, "*")
+			val = fmt.Sprintf("%s<%s>", typ, color("nil", colors.Nil[0], colors.Nil[1]))
 		} else {
 			val = stringify(v.Elem(), opt, true, showAliasName, level)
 		}
 		return color("&", colors.Ptr[0], colors.Ptr[1]) + val
 	case reflect.String:
-		if escapeString {
-			str := fmt.Sprintf("%q", v.String())
-			return color(str, colors.String[0], colors.String[1])
+		t := v.Type()
+		val := v.String()
+		showType := showAliasName && t.Name() != t.Kind().String()
+		if escapeString || showType {
+			val = fmt.Sprintf("%q", val)
 		}
-		return color(v.String(), colors.String[0], colors.String[1])
+		val = color(val, colors.String[0], colors.String[1])
+		if showType {
+			return fmt.Sprintf("%s(%s)", getType(t), val)
+		}
+		return val
 	case reflect.Bool:
+		t := v.Type()
+		val := ""
 		if v.Bool() {
-			return color("true", colors.Bool[0], colors.Bool[1])
+			val = color("true", colors.Bool[0], colors.Bool[1])
 		} else {
-			return color("false", colors.Bool[0], colors.Bool[1])
+			val = color("false", colors.Bool[0], colors.Bool[1])
 		}
+		if showAliasName && t.Name() != t.Kind().String() {
+			return fmt.Sprintf("%s(%s)", getType(t), val)
+		}
+		return val
 	case reflect.Complex64, reflect.Complex128:
 		return color(fmt.Sprintf("%v", v), colors.Float[0], colors.Float[1])
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Float32, reflect.Float64:
-		str := ""
+		val := ""
 		if v.Kind() == reflect.Float32 || v.Kind() == reflect.Float64 {
-			str = color(fmt.Sprintf("%v", v), colors.Float[0], colors.Float[1])
+			val = color(fmt.Sprintf("%v", v), colors.Float[0], colors.Float[1])
 		} else {
-			str = color(fmt.Sprintf("%v", v), colors.Int[0], colors.Int[1])
+			val = color(fmt.Sprintf("%v", v), colors.Int[0], colors.Int[1])
 		}
 		if showAliasName && v.Type().Name() != v.Type().Kind().String() {
-			return fmt.Sprintf("%s(%s)", v.Type().String(), str)
+			return fmt.Sprintf("%s(%s)", v.Type().String(), val)
 		}
-		return str
+		return val
 	case reflect.Interface:
 		return stringify(v.Elem(), opt, escapeString, showAliasName, level)
 	case reflect.Slice, reflect.Array:
 		typ := getType(v.Type())
 		size := ""
 		if v.Kind() == reflect.Slice {
-			len := color(fmt.Sprintf("%d", v.Len()), colors.Int[0], colors.Int[1])
-			cap := color(fmt.Sprintf("%d", v.Cap()), colors.Int[0], colors.Int[1])
-			size = fmt.Sprintf("%s/%s", len, cap)
+			size = fmt.Sprintf("%d/%d", v.Len(), v.Cap())
 		}
 		typ = fmt.Sprintf("[%s%s", size, strings.TrimPrefix(typ, "["))
 		if v.Kind() == reflect.Slice && v.IsNil() {
@@ -157,6 +169,7 @@ func stringify(v reflect.Value, opt options, escapeString bool, showAliasName bo
 			val := stringify(v.Field(i), opt, true, false, level+1)
 			fields[i] = fmt.Sprintf("%s: %s", color(f.Name, colors.Property[0], colors.Property[1]), val)
 		}
+		// TODO pointer methods
 		for i := 0; i < v.NumMethod(); i++ {
 			m := v.Method(i)
 			fname := v.Type().Method(i).Name
@@ -172,9 +185,7 @@ func stringify(v reflect.Value, opt options, escapeString bool, showAliasName bo
 		typ := getType(v.Type())
 		if v.Cap() > 0 {
 			typ = strings.TrimSuffix(typ, ")")
-			len := color(fmt.Sprintf("%d", v.Len()), colors.Int[0], colors.Int[1])
-			cap := color(fmt.Sprintf("%d", v.Cap()), colors.Int[0], colors.Int[1])
-			return fmt.Sprintf("%s,%s/%s)", typ, len, cap)
+			return fmt.Sprintf("%s,%d/%d)", typ, v.Len(), v.Cap())
 		}
 		if v.IsNil() {
 			return fmt.Sprintf("%s<%s>", typ, color("nil", colors.Nil[0], colors.Nil[1]))
@@ -245,9 +256,6 @@ func getType(t reflect.Type) string {
 		}
 		return "any"
 	default:
-		if t.Name() != t.Kind().String() {
-			return t.Name()
-		}
 		return t.String()
 	}
 }
