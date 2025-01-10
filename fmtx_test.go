@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 )
 
 type MyInt int
@@ -72,24 +73,51 @@ func genData() Data {
 }
 
 func BenchmarkString(b *testing.B) {
-	EnableColor = true
+	SetEnableColor(true)
 	data := genData()
 	for i := 0; i < b.N; i++ {
-		String(data)
+		_ = String(data)
 	}
 }
 
 func BenchmarkStringDisableColor(b *testing.B) {
-	EnableColor = false
+	SetEnableColor(false)
 	data := genData()
 	for i := 0; i < b.N; i++ {
-		String(data)
+		_ = String(data)
 	}
 }
 
 func BenchmarkSprintf(b *testing.B) {
 	data := genData()
 	for i := 0; i < b.N; i++ {
-		fmt.Sprintf("%#v", data)
+		_ = fmt.Sprintf("%#v", data)
+	}
+}
+
+func TestPrint(t *testing.T) {
+	data := genData()
+	c := 8
+	defer func() {
+		cacheEnableColor = 0
+	}()
+	for i := 0; i < c; i++ {
+		start2 := time.Now()
+		_ = fmt.Sprintf("%#v\n", data)
+		fmt.Println(1, time.Since(start2).String())
+	}
+	fmt.Println("")
+	cacheEnableColor = 0
+	for i := 0; i < c; i++ {
+		start := time.Now()
+		_ = String(data)
+		fmt.Println(2, time.Since(start).String())
+	}
+	fmt.Println("")
+	cacheEnableColor = 1
+	for i := 0; i < c; i++ {
+		start := time.Now()
+		_ = String(data)
+		fmt.Println(3, time.Since(start).String())
 	}
 }

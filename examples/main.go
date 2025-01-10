@@ -60,8 +60,7 @@ func (Data) Method4(a int, b float32, c string, d map[string]any, e []int, f fun
 func (d Data) Method5() {}
 
 func main() {
-	// fmtx.EnableColor = false
-	// fmtx.Options.MaxDepth = 5
+	// fmtx.SetEnableColor(true)
 	var initMap map[string]int
 	var initArr [2]int
 	var initSlice []int
@@ -69,9 +68,10 @@ func main() {
 	var initFn func() error
 	var initAny any
 	var initErr error
-	fmtx.Println("Hello, \nworld", ptr("Hi \"Tom\""))
+
+	fmtx.Println("Hello, \nworld", 'a', ptr("Hi \"Tom\""))
 	fmtx.Println(true, false)
-	fmtx.Println(123, 3.14, ptr(124))
+	fmtx.Println(123, 3.14, int32(123), ptr(124))
 	fmtx.Println(123, 3.14, complex64(1+2i), complex(3.5, -4.5))
 	fmtx.Println(MyInt(123), MyFloat(3.14), MyString("string"), MyBool(true))
 	fmtx.Println(ptr(MyInt(123)), ptr(MyFloat(3.14)), ptr(MyString("string")), ptr(MyBool(true)))
@@ -140,6 +140,10 @@ func main() {
 	data.loop = &data
 	data.anyMap = map[any]any{
 		1: 1,
+	}
+	for i := 0; i < 12; i++ {
+		data.anyMap[i] = i
+		data.anyMap[fmt.Sprintf("key-%d", i)] = i
 	}
 
 	fmtx.Println(data)

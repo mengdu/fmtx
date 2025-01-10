@@ -17,9 +17,10 @@ var Options options = options{
 		Bool:     [2]string{"33", "39;49"},
 		Ptr:      [2]string{"33", "39;49"},
 		Property: [2]string{"90", "39;49"},
-		Func:     [2]string{"3;94", "39;49;23"},
+		Func:     [2]string{"3;35", "39;49;23"},
 		Chan:     [2]string{"31", "39;49"},
 		Nil:      [2]string{"93", "39;49"},
+		Tip:      [2]string{"2", "22"},
 	},
 }
 
@@ -39,6 +40,7 @@ type colorMap struct {
 	Func     [2]string
 	Chan     [2]string
 	Nil      [2]string
+	Tip      [2]string
 }
 
 func Println(a ...any) (n int, err error) {
@@ -51,25 +53,35 @@ func Println(a ...any) (n int, err error) {
 
 func String(o any) string {
 	v := reflect.ValueOf(o)
-	return stringify(v, Options, false, true, 0)
+	p := getPP()
+	defer p.free()
+	stringify(p, v, Options, false, true, 0)
+	return string(p.buf)
 }
 
-func stringify(v reflect.Value, opt options, escapeString bool, showAliasName bool, level uint) string {
+func stringify(p *pp, v reflect.Value, opt options, escapeString bool, showAliasName bool, level uint) {
 	colors := opt.ColorMap
 	switch v.Kind() {
 	case reflect.Invalid:
 		// var initAny any or var initInter error
-		return fmt.Sprintf("<%s>", color("nil", colors.Nil[0], colors.Nil[1]))
+		p.buf.WriteString(nilVal())
+		p.buf.WriteChar('.')
+		p.buf.WriteString(color("(<invalid>)", colors.Tip[0], colors.Tip[1]))
+		return
 	case reflect.Ptr:
-		val := ""
 		if v.IsNil() {
-			typ := getType(v.Type())
-			typ = strings.TrimPrefix(typ, "*")
-			val = fmt.Sprintf("%s<%s>", typ, color("nil", colors.Nil[0], colors.Nil[1]))
-		} else {
-			val = stringify(v.Elem(), opt, true, showAliasName, level)
+			p.buf.WriteString(nilVal())
+			p.buf.WriteChar('.')
+			p.buf.WriteString(color("", colors.Tip[0], ""))
+			p.buf.WriteChar('(')
+			getType(p, v.Type())
+			p.buf.WriteChar(')')
+			p.buf.WriteString(color("", "", colors.Tip[1]))
+			return
 		}
-		return color("&", colors.Ptr[0], colors.Ptr[1]) + val
+		p.buf.WriteString(color("&", colors.Ptr[0], colors.Ptr[1]))
+		stringify(p, v.Elem(), opt, true, showAliasName, level)
+		return
 	case reflect.String:
 		t := v.Type()
 		val := v.String()
@@ -77,11 +89,17 @@ func stringify(v reflect.Value, opt options, escapeString bool, showAliasName bo
 		if escapeString || showType {
 			val = fmt.Sprintf("%q", val)
 		}
-		val = color(val, colors.String[0], colors.String[1])
-		if showType {
-			return fmt.Sprintf("%s(%s)", getType(t), val)
+		if level > 0 || showType {
+			val = color(val, colors.String[0], colors.String[1])
 		}
-		return val
+		if showType {
+			getType(p, t)
+			p.buf.WriteChar('(')
+			p.buf.WriteString(val)
+			p.buf.WriteChar(')')
+			return
+		}
+		p.buf.WriteString(val)
 	case reflect.Bool:
 		t := v.Type()
 		val := ""
@@ -91,11 +109,15 @@ func stringify(v reflect.Value, opt options, escapeString bool, showAliasName bo
 			val = color("false", colors.Bool[0], colors.Bool[1])
 		}
 		if showAliasName && t.Name() != t.Kind().String() {
-			return fmt.Sprintf("%s(%s)", getType(t), val)
+			getType(p, t)
+			p.buf.WriteChar('(')
+			p.buf.WriteString(val)
+			p.buf.WriteChar(')')
+			return
 		}
-		return val
+		p.buf.WriteString(val)
 	case reflect.Complex64, reflect.Complex128:
-		return color(fmt.Sprintf("%v", v), colors.Float[0], colors.Float[1])
+		p.buf.WriteString(color(fmt.Sprintf("%v", v), colors.Float[0], colors.Float[1]))
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Float32, reflect.Float64:
@@ -106,158 +128,267 @@ func stringify(v reflect.Value, opt options, escapeString bool, showAliasName bo
 			val = color(fmt.Sprintf("%v", v), colors.Int[0], colors.Int[1])
 		}
 		if showAliasName && v.Type().Name() != v.Type().Kind().String() {
-			return fmt.Sprintf("%s(%s)", v.Type().String(), val)
+			getType(p, v.Type())
+			p.buf.WriteChar('(')
+			p.buf.WriteString(val)
+			p.buf.WriteChar(')')
+			return
 		}
-		return val
+		p.buf.WriteString(val)
 	case reflect.Interface:
-		return stringify(v.Elem(), opt, escapeString, showAliasName, level)
+		stringify(p, v.Elem(), opt, escapeString, showAliasName, level)
 	case reflect.Slice, reflect.Array:
-		typ := getType(v.Type())
-		size := ""
-		if v.Kind() == reflect.Slice {
-			size = fmt.Sprintf("%d/%d", v.Len(), v.Cap())
-		}
-		typ = fmt.Sprintf("[%s%s", size, strings.TrimPrefix(typ, "["))
 		if v.Kind() == reflect.Slice && v.IsNil() {
-			return fmt.Sprintf("%s<%s>", typ, color("nil", colors.Nil[0], colors.Nil[1]))
+			p.buf.WriteString(nilVal())
+			p.buf.WriteString(color("", colors.Tip[0], ""))
+			p.buf.WriteString(".(")
+			getType(p, v.Type())
+			p.buf.WriteString(")")
+			p.buf.WriteString(color("", "", colors.Tip[1]))
+			return
 		}
+		getType(p, v.Type())
 		if level >= opt.MaxDepth {
-			return fmt.Sprintf("%s{…}", typ)
+			p.buf.WriteString("{…}")
+			return
 		}
 		n := v.Len()
 		hasMore := v.Len() > opt.MaxArray
 		if n > opt.MaxArray {
 			n = opt.MaxArray
 		}
-		arr := make([]string, n)
+
+		p.buf.WriteChar('[')
 		for i := 0; i < n; i++ {
-			arr[i] = stringify(v.Index(i), opt, true, false, level+1)
+			if i > 0 {
+				p.buf.WriteString(", ")
+			}
+			stringify(p, v.Index(i), opt, true, false, level+1)
 		}
 		if hasMore {
-			arr = append(arr, "…")
+			p.buf.WriteString(", …")
 		}
-		val := fmt.Sprintf("{%s}", strings.Join(arr, ", "))
-		return fmt.Sprintf("%s%s", typ, val)
+		p.buf.WriteChar(']')
 	case reflect.Map:
-		typ := getType(v.Type())
 		if v.IsNil() {
-			return fmt.Sprintf("%s<%s>", typ, color("nil", colors.Nil[0], colors.Nil[1]))
+			p.buf.WriteString(nilVal())
+			p.buf.WriteChar('.')
+			p.buf.WriteString(color("", colors.Tip[0], ""))
+			p.buf.WriteChar('(')
+			getType(p, v.Type())
+			p.buf.WriteChar(')')
+			p.buf.WriteString(color("", "", colors.Tip[1]))
+			return
 		}
+		getType(p, v.Type())
 		if level >= opt.MaxDepth {
-			return fmt.Sprintf("%s{…}", typ)
+			p.buf.WriteString("{…}")
+			return
 		}
-		fields := make([]string, v.Len())
-		for i, k := range v.MapKeys() {
-			key := stringify(k, opt, true, false, level+1)
-			fields[i] = fmt.Sprintf("%s: %s", color(key, colors.Property[0], colors.Property[1]), stringify(v.MapIndex(k), opt, true, false, level+1))
-		}
-		body := fmt.Sprintf("{%s}", strings.Join(fields, ", "))
-		if len(fields) > 20 || len(strip(body)) > 100 {
-			indent := strings.Repeat(" ", int((level+1)*2))
-			body = fmt.Sprintf("{\n%s\n%s}", indent+strings.Join(fields, ",\n"+indent), strings.Repeat(" ", int(level*2)))
-		}
-		return fmt.Sprintf("%s%s", typ, body)
-	case reflect.Struct:
-		typ := getType(v.Type())
-		if level >= opt.MaxDepth {
-			return fmt.Sprintf("%s{…}", typ)
+		needBreak := v.Len() > 20
+		indent := strings.Repeat(" ", int(level*2))
+		p.buf.WriteChar('{')
+		if needBreak {
+			p.buf.WriteChar('\n')
+			p.buf.WriteString(indent)
+			p.buf.WriteString("  ")
 		}
 
-		fields := make([]string, v.NumField())
-		for i := 0; i < v.NumField(); i++ {
-			f := v.Type().Field(i)
-			val := stringify(v.Field(i), opt, true, false, level+1)
-			fields[i] = fmt.Sprintf("%s: %s", color(f.Name, colors.Property[0], colors.Property[1]), val)
+		for i, k := range v.MapKeys() {
+			if i > 0 {
+				if needBreak {
+					p.buf.WriteString(",\n")
+					p.buf.WriteString(indent)
+					p.buf.WriteString("  ")
+				} else {
+					p.buf.WriteString(", ")
+				}
+			}
+			stringify(p, k, opt, true, false, level+1)
+			p.buf.WriteString(": ")
+			stringify(p, v.MapIndex(k), opt, true, false, level+1)
 		}
+		if needBreak {
+			p.buf.WriteChar('\n')
+			p.buf.WriteString(indent)
+		}
+		p.buf.WriteChar('}')
+	case reflect.Struct:
+		getType(p, v.Type())
+		if level >= opt.MaxDepth {
+			p.buf.WriteString("{…}")
+			return
+		}
+
+		fl := v.NumField()
+		needBreak := fl > 20
+		indent := strings.Repeat(" ", int(level*2))
+		p.buf.WriteChar('{')
+		if needBreak {
+			p.buf.WriteChar('\n')
+			p.buf.WriteString(indent)
+			p.buf.WriteString("  ")
+		}
+
+		for i := 0; i < fl; i++ {
+			f := v.Type().Field(i)
+			if i > 0 {
+				if needBreak {
+					p.buf.WriteString(",\n")
+					p.buf.WriteString(indent)
+					p.buf.WriteString("  ")
+				} else {
+					p.buf.WriteString(", ")
+				}
+			}
+			p.buf.WriteString(color(f.Name, colors.Property[0], colors.Property[1]))
+			p.buf.WriteString(": ")
+			stringify(p, v.Field(i), opt, true, false, level+1)
+		}
+
 		// TODO pointer methods
 		for i := 0; i < v.NumMethod(); i++ {
 			m := v.Method(i)
 			fname := v.Type().Method(i).Name
-			fields = append(fields, fmt.Sprintf("%s: %s", color(fname, colors.Property[0], colors.Property[1]), stringify(m, opt, true, false, level+1)))
+
+			if i > 0 || fl > 0 {
+				if needBreak {
+					p.buf.WriteString(",\n")
+					p.buf.WriteString(indent)
+					p.buf.WriteString("  ")
+				} else {
+					p.buf.WriteString(", ")
+				}
+			}
+
+			p.buf.WriteString(color(fname, colors.Property[0], colors.Property[1]))
+			p.buf.WriteString(": ")
+			stringify(p, m, opt, true, false, level+1)
 		}
-		body := fmt.Sprintf("{%s}", strings.Join(fields, ", "))
-		if len(fields) > 20 || len(strip(body)) > 100 {
-			indent := strings.Repeat(" ", int((level+1)*2))
-			body = fmt.Sprintf("{\n%s\n%s}", indent+strings.Join(fields, ",\n"+indent), strings.Repeat(" ", int(level*2)))
+		if needBreak {
+			p.buf.WriteChar('\n')
+			p.buf.WriteString(indent)
 		}
-		return fmt.Sprintf("%s.%s%s", v.Type().PkgPath(), v.Type().Name(), body)
+		p.buf.WriteChar('}')
 	case reflect.Chan:
-		typ := getType(v.Type())
+		if v.IsNil() {
+			p.buf.WriteString(nilVal())
+			p.buf.WriteChar('.')
+			p.buf.WriteString(color("", colors.Tip[0], ""))
+			p.buf.WriteChar('(')
+			getType(p, v.Type())
+			p.buf.WriteChar(')')
+			p.buf.WriteString(color("", "", colors.Tip[1]))
+			return
+		}
+
+		getType(p, v.Type())
 		if v.Cap() > 0 {
-			typ = strings.TrimSuffix(typ, ")")
-			return fmt.Sprintf("%s,%d/%d)", typ, v.Len(), v.Cap())
+			i := len(p.buf)
+			p.buf.Remove(i-1, 1)
+			p.buf.WriteString(fmt.Sprintf(",%d/%d)", v.Len(), v.Cap()))
 		}
-		if v.IsNil() {
-			return fmt.Sprintf("%s<%s>", typ, color("nil", colors.Nil[0], colors.Nil[1]))
-		}
-		return typ
 	case reflect.Func:
-		typ := getType(v.Type())
 		if v.IsNil() {
-			return fmt.Sprintf("%s<%s>", typ, color("nil", colors.Nil[0], colors.Nil[1]))
+			p.buf.WriteString(nilVal())
+			p.buf.WriteChar('.')
+			p.buf.WriteString(color("", colors.Tip[0], ""))
+			p.buf.WriteChar('(')
+			p.buf.WriteString("func(){}")
+			p.buf.WriteChar(')')
+			p.buf.WriteString(color("", "", colors.Tip[1]))
+			return
 		}
-		return color(typ, colors.Func[0], colors.Func[1])
+		p.buf.WriteString(color("", colors.Func[0], ""))
+		getType(p, v.Type())
+		p.buf.WriteString(color("", "", colors.Func[1]))
+		return
 	default:
-		return fmt.Sprintf("%v", v)
+		p.buf.WriteString(fmt.Sprintf("%v", v))
 	}
 }
 
-func getType(t reflect.Type) string {
+func getType(p *pp, t reflect.Type) {
 	switch t.Kind() {
 	case reflect.Ptr:
-		return "*" + getType(t.Elem())
+		p.buf.WriteChar('*')
+		getType(p, t.Elem())
 	case reflect.Map:
-		key := getType(t.Key())
-		val := getType(t.Elem())
-		// return fmt.Sprintf("map[%s]%s", key, val)
-		return fmt.Sprintf("map<%s,%s>", key, val)
+		p.buf.WriteString("map<")
+		getType(p, t.Key())
+		p.buf.WriteChar(',')
+		getType(p, t.Elem())
+		p.buf.WriteChar('>')
 	case reflect.Array:
-		return fmt.Sprintf("[%d]%s", t.Len(), getType(t.Elem()))
+		p.buf.WriteChar('[')
+		p.buf.WriteString(fmt.Sprintf("%d", t.Len()))
+		p.buf.WriteChar(']')
+		getType(p, t.Elem())
 	case reflect.Slice:
-		return fmt.Sprintf("[]%s", getType(t.Elem()))
+		p.buf.WriteString("[]")
+		getType(p, t.Elem())
 	case reflect.Struct:
-		return t.String()
+		p.buf.WriteString(t.String())
 	case reflect.Chan:
-		dr := ""
+		p.buf.WriteString("chan")
 		if t.ChanDir() == reflect.RecvDir {
-			dr = "->"
+			p.buf.WriteString("->")
 		} else if t.ChanDir() == reflect.SendDir {
-			dr = "<-"
+			p.buf.WriteString("<-")
 		}
-		return fmt.Sprintf("chan%s(%s)", dr, getType(t.Elem()))
+		p.buf.WriteChar('(')
+		getType(p, t.Elem())
+		p.buf.WriteChar(')')
 	case reflect.Func:
-		ni := t.NumIn()
-		args := make([]string, ni)
-		for i := 0; i < ni; i++ {
-			typ := getType(t.In(i))
-			if i == ni-1 && t.IsVariadic() {
-				args[i] = fmt.Sprintf("...%s", strings.TrimPrefix(typ, "[]"))
+		p.buf.WriteString("func(")
+		inLen := t.NumIn()
+		for i := 0; i < inLen; i++ {
+			if i == inLen-1 && t.IsVariadic() {
+				l := len(p.buf)
+				p.buf.WriteString(", ...")
+				getType(p, t.In(i))
+				p.buf.Remove(l, 2) // remove "[]"
 			} else {
-				args[i] = typ
+				if i > 0 {
+					p.buf.WriteString(", ")
+				}
+				getType(p, t.In(i))
 			}
 		}
-		no := t.NumOut()
-		outs := make([]string, no)
-		for i := 0; i < no; i++ {
-			outs[i] = getType(t.Out(i))
+		p.buf.WriteChar(')')
+
+		outLen := t.NumOut()
+		if outLen > 0 {
+			p.buf.WriteChar('(')
+			for i := 0; i < outLen; i++ {
+				if i > 0 {
+					p.buf.WriteString(", ")
+				}
+				getType(p, t.Out(i))
+			}
+			p.buf.WriteChar(')')
 		}
-		out := ""
-		if len(outs) > 0 {
-			out = fmt.Sprintf("(%s)", strings.Join(outs, ", "))
-			out = " " + out
-		}
-		return fmt.Sprintf("func(%s)%s", strings.Join(args, ", "), out)
+		p.buf.WriteString("{}")
 	case reflect.Interface:
 		if t.Name() != "" {
 			if t.PkgPath() != "" {
-				return fmt.Sprintf("%s.%s", t.PkgPath(), t.Name())
+				p.buf.WriteString(t.PkgPath())
+				p.buf.WriteChar('.')
+				p.buf.WriteString(t.Name())
+				return
 			}
-			return t.Name()
+			p.buf.WriteString(t.Name())
+			return
 		}
-		return "any"
+		p.buf.WriteString("any")
+		return
 	default:
-		return t.String()
+		p.buf.WriteString(t.String())
 	}
+}
+
+func nilVal() string {
+	return color("nil", Options.ColorMap.Nil[0], Options.ColorMap.Nil[1])
 }
 
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
