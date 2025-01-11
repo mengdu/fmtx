@@ -22,6 +22,10 @@ func (b *buf) Remove(i int, c int) {
 	*b = append((*b)[:i], (*b)[i+c:]...)
 }
 
+func (b *buf) Splice(i int, s string) {
+	*b = append((*b)[:i], append([]byte(s), (*b)[i:]...)...)
+}
+
 type pp struct {
 	buf buf
 }

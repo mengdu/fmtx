@@ -16,6 +16,11 @@ type MyFloat float32
 type MyString string
 type MyBool bool
 
+type Foo struct {
+	Key  int
+	Loop *Foo
+}
+
 type Data struct {
 	A      int
 	B      float32
@@ -38,7 +43,14 @@ type Data struct {
 	err    error
 	any    any
 	anyMap map[any]any
-	loop   *Data
+	Loop   *Data
+	Foo
+	AnonymousField struct {
+		One            string
+		AnonymousField struct {
+			Two string
+		}
+	}
 }
 
 func (d *Data) Method1() (int, error) {
@@ -58,6 +70,53 @@ func (Data) Method4(a int, b float32, c string, d map[string]any, e []int, f fun
 }
 
 func (d Data) Method5() {}
+
+func genData() Data {
+	data := Data{
+		A: 1,
+		B: 3.14,
+		C: "Hello \nworld",
+		D: true,
+		E: []int{1, 2, 3},
+		F: map[string]int{
+			"a": 1,
+			"b": 2,
+		},
+		G:    &map[string]int{},
+		Nil1: nil,
+		fn: func() error {
+			return nil
+		},
+		ch1: make(chan<- int),
+		ch2: make(<-chan int),
+		ch3: make(chan int),
+		ch4: make(chan int, 4),
+		err: errors.New("some error"),
+		any: []any{ptr[string]},
+	}
+	data.anyMap = map[any]any{
+		1: 1,
+	}
+	for i := 0; i < 12; i++ {
+		data.anyMap[i] = i
+		data.anyMap[fmt.Sprintf("key-%d", i)] = i
+	}
+	foo := Foo{
+		Key: 123,
+	}
+	foo.Loop = &foo
+	data.Foo = foo
+	data.AnonymousField = struct {
+		One            string
+		AnonymousField struct{ Two string }
+	}{
+		One: "one",
+		AnonymousField: struct{ Two string }{
+			Two: "two",
+		},
+	}
+	return data
+}
 
 func main() {
 	// fmtx.SetEnableColor(true)
@@ -115,38 +174,13 @@ func main() {
 		true:    3.14,
 		"a\nbc": "hello \n world!",
 	})
-	data := Data{
-		A: 1,
-		B: 3.14,
-		C: "Hello \nworld",
-		D: true,
-		E: []int{1, 2, 3},
-		F: map[string]int{
-			"a": 1,
-			"b": 2,
-		},
-		G:    &map[string]int{},
-		Nil1: nil,
-		fn: func() error {
-			return nil
-		},
-		ch1: make(chan<- int),
-		ch2: make(<-chan int),
-		ch3: make(chan int),
-		ch4: make(chan int, 4),
-		err: errors.New("some error"),
-		any: []any{ptr[string]},
+	fmtx.Println(genData())
+	foo := Foo{
+		Key: 123,
 	}
-	data.loop = &data
-	data.anyMap = map[any]any{
-		1: 1,
-	}
-	for i := 0; i < 12; i++ {
-		data.anyMap[i] = i
-		data.anyMap[fmt.Sprintf("key-%d", i)] = i
-	}
-
-	fmtx.Println(data)
+	foo.Loop = &foo
+	fmtx.Println(foo)
+	fmtx.Println(fmtx.Options)
 	fn := func(a int, b float32, c string, d map[string]any, e []int, f ...[]int) error {
 		return nil
 	}
