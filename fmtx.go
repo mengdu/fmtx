@@ -3,13 +3,14 @@ package fmtx
 import (
 	"fmt"
 	"reflect"
-	"regexp"
 	"strings"
 )
 
 var Options options = options{
-	MaxDepth: 3,
-	MaxArray: 50,
+	MaxDepth:             3,
+	MaxArray:             50,
+	MaxPropertyBreakLine: 10,
+	ShowStructMethod:     true,
 	ColorMap: colorMap{
 		Int:      [2]string{"34", "39;49"},
 		Float:    [2]string{"36", "39;49"},
@@ -17,7 +18,7 @@ var Options options = options{
 		Bool:     [2]string{"33", "39;49"},
 		Ptr:      [2]string{"33", "39;49"},
 		Property: [2]string{"90", "39;49"},
-		Func:     [2]string{"3;35", "39;49;23"},
+		Func:     [2]string{"3;36", "39;49;23"},
 		Chan:     [2]string{"31", "39;49"},
 		Nil:      [2]string{"93", "39;49"},
 		Tip:      [2]string{"2", "22"},
@@ -25,9 +26,11 @@ var Options options = options{
 }
 
 type options struct {
-	MaxDepth uint
-	MaxArray int
-	ColorMap colorMap
+	MaxDepth             uint
+	MaxArray             int
+	MaxPropertyBreakLine int
+	ShowStructMethod     bool
+	ColorMap             colorMap
 }
 
 type colorMap struct {
@@ -55,11 +58,11 @@ func String(o any) string {
 	v := reflect.ValueOf(o)
 	p := getPP()
 	defer p.free()
-	stringify(p, v, &Options, false, true, 0, false)
+	stringify(p, v, &Options, false, true, 0, nil)
 	return string(p.buf)
 }
 
-func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAliasName bool, level uint, prevIsPtr bool) {
+func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAliasName bool, level uint, parent *reflect.Value) {
 	colors := opt.ColorMap
 	switch v.Kind() {
 	case reflect.Invalid:
@@ -80,7 +83,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 			return
 		}
 		p.buf.WriteString(color("&", colors.Ptr[0], colors.Ptr[1]))
-		stringify(p, v.Elem(), opt, true, showAliasName, level, true)
+		stringify(p, v.Elem(), opt, true, showAliasName, level, &v)
 		return
 	case reflect.String:
 		t := v.Type()
@@ -89,7 +92,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		if escapeString || showType {
 			val = fmt.Sprintf("%q", val)
 		}
-		if level > 0 || showType || prevIsPtr {
+		if level > 0 || showType || (parent != nil && parent.Kind() == reflect.Ptr) {
 			val = color(val, colors.String[0], colors.String[1])
 		}
 		if showType {
@@ -136,7 +139,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		}
 		p.buf.WriteString(val)
 	case reflect.Interface:
-		stringify(p, v.Elem(), opt, escapeString, showAliasName, level, false)
+		stringify(p, v.Elem(), opt, escapeString, showAliasName, level, nil)
 	case reflect.Slice, reflect.Array:
 		if v.Kind() == reflect.Slice && v.IsNil() {
 			p.buf.WriteString(nilVal())
@@ -167,7 +170,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 			if i > 0 {
 				p.buf.WriteString(", ")
 			}
-			stringify(p, v.Index(i), opt, true, false, level+1, false)
+			stringify(p, v.Index(i), opt, true, false, level+1, nil)
 		}
 		if hasMore {
 			p.buf.WriteString(", …")
@@ -189,7 +192,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 			p.buf.WriteString("{…}")
 			return
 		}
-		needBreak := v.Len() > 20
+		needBreak := v.Len() > opt.MaxPropertyBreakLine
 		indent := strings.Repeat(" ", int(level*2))
 		p.buf.WriteChar('{')
 		if needBreak {
@@ -208,9 +211,9 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 					p.buf.WriteString(", ")
 				}
 			}
-			stringify(p, k, opt, true, false, level+1, false)
+			stringify(p, k, opt, true, false, level+1, nil)
 			p.buf.WriteString(": ")
-			stringify(p, v.MapIndex(k), opt, true, false, level+1, false)
+			stringify(p, v.MapIndex(k), opt, true, false, level+1, nil)
 		}
 		if needBreak {
 			p.buf.WriteChar('\n')
@@ -224,8 +227,19 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 			return
 		}
 
-		fl := v.NumField()
-		needBreak := fl > 20
+		val := v
+		numMethod := 0
+		if opt.ShowStructMethod {
+			if v.CanAddr() {
+				val = val.Addr()
+			} else if parent != nil {
+				val = *parent
+			}
+			numMethod = val.NumMethod()
+		}
+		numField := v.NumField()
+		needBreak := (numField + numMethod) > opt.MaxPropertyBreakLine
+
 		indent := strings.Repeat(" ", int(level*2))
 		p.buf.WriteChar('{')
 		if needBreak {
@@ -234,7 +248,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 			p.buf.WriteString("  ")
 		}
 
-		for i := 0; i < fl; i++ {
+		for i := 0; i < numField; i++ {
 			f := v.Type().Field(i)
 			if i > 0 {
 				if needBreak {
@@ -247,31 +261,33 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 			}
 			p.buf.WriteString(color(f.Name, colors.Property[0], colors.Property[1]))
 			p.buf.WriteString(": ")
-			stringify(p, v.Field(i), opt, true, false, level+1, false)
+			stringify(p, v.Field(i), opt, true, false, level+1, nil)
 		}
 
-		// TODO pointer methods
-		for i := 0; i < v.NumMethod(); i++ {
-			m := v.Method(i)
-			fname := v.Type().Method(i).Name
+		if opt.ShowStructMethod {
+			typ := val.Type()
+			for i := 0; i < numMethod; i++ {
+				m := val.Method(i)
+				fname := typ.Method(i).Name
 
-			if i > 0 || fl > 0 {
-				if needBreak {
-					p.buf.WriteString(",\n")
-					p.buf.WriteString(indent)
-					p.buf.WriteString("  ")
-				} else {
-					p.buf.WriteString(", ")
+				if i > 0 || numMethod > 0 {
+					if needBreak {
+						p.buf.WriteString(",\n")
+						p.buf.WriteString(indent)
+						p.buf.WriteString("  ")
+					} else {
+						p.buf.WriteString(", ")
+					}
 				}
-			}
 
-			p.buf.WriteString(color(fname, colors.Property[0], colors.Property[1]))
-			p.buf.WriteString(": ")
-			stringify(p, m, opt, true, false, level+1, false)
-		}
-		if needBreak {
-			p.buf.WriteChar('\n')
-			p.buf.WriteString(indent)
+				p.buf.WriteString(color(fname, colors.Property[0], colors.Property[1]))
+				p.buf.WriteString(": ")
+				stringify(p, m, opt, true, false, level+1, nil)
+			}
+			if needBreak {
+				p.buf.WriteChar('\n')
+				p.buf.WriteString(indent)
+			}
 		}
 		p.buf.WriteChar('}')
 	case reflect.Chan:
@@ -350,7 +366,7 @@ func getType(p *pp, t reflect.Type) {
 		getType(p, t.Elem())
 		p.buf.WriteChar(')')
 	case reflect.Func:
-		p.buf.WriteString("func(")
+		p.buf.WriteString("[func(")
 		inLen := t.NumIn()
 		for i := 0; i < inLen; i++ {
 			if i == inLen-1 && t.IsVariadic() {
@@ -369,16 +385,24 @@ func getType(p *pp, t reflect.Type) {
 
 		outLen := t.NumOut()
 		if outLen > 0 {
-			p.buf.WriteChar('(')
+			p.buf.WriteChar(' ')
+			if outLen > 1 {
+				p.buf.WriteChar('(')
+			}
 			for i := 0; i < outLen; i++ {
 				if i > 0 {
 					p.buf.WriteString(", ")
 				}
 				getType(p, t.Out(i))
 			}
-			p.buf.WriteChar(')')
+			if outLen > 1 {
+				p.buf.WriteChar(')')
+				p.buf.WriteChar(')')
+				p.buf.WriteChar(')')
+			}
+			p.buf.WriteChar(' ')
 		}
-		p.buf.WriteString("{}")
+		p.buf.WriteString("{}]")
 	case reflect.Interface:
 		if t.Name() != "" {
 			if t.PkgPath() != "" {
@@ -399,11 +423,4 @@ func getType(p *pp, t reflect.Type) {
 
 func nilVal() string {
 	return color("nil", Options.ColorMap.Nil[0], Options.ColorMap.Nil[1])
-}
-
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-
-// removes all ANSI escape sequences from a string.
-func strip(input string) string {
-	return ansiRegex.ReplaceAllString(input, "")
 }

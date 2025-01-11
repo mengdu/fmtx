@@ -71,8 +71,8 @@ func (Data) Method4(a int, b float32, c string, d map[string]any, e []int, f fun
 
 func (d Data) Method5() {}
 
-func genData() Data {
-	data := Data{
+func genData() *Data {
+	data := &Data{
 		A: 1,
 		B: 3.14,
 		C: "Hello \nworld",
@@ -120,6 +120,8 @@ func genData() Data {
 
 func main() {
 	// fmtx.SetEnableColor(true)
+	// fmtx.Options.MaxPropertyBreakLine = 3
+	// fmtx.Options.ShowStructMethod = false
 	var initMap map[string]int
 	var initArr [2]int
 	var initSlice []int
