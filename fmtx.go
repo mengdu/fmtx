@@ -7,15 +7,16 @@ import (
 	"strings"
 )
 
-type options struct {
+type Options struct {
 	MaxDepth             uint
 	MaxArray             int
 	MaxPropertyBreakLine int
 	ShowStructMethod     bool
-	ColorMap             colorMap
+	ColorMap             ColorMap
+	Color                func(s string, start string, end string) string
 }
 
-type colorMap struct {
+type ColorMap struct {
 	Int      [2]string
 	Float    [2]string
 	Complex  [2]string
@@ -29,12 +30,12 @@ type colorMap struct {
 	Tip      [2]string
 }
 
-var Options options = options{
+var Default Options = Options{
 	MaxDepth:             3,
 	MaxArray:             50,
 	MaxPropertyBreakLine: 10,
 	ShowStructMethod:     true,
-	ColorMap: colorMap{
+	ColorMap: ColorMap{
 		Int:      [2]string{"34", "39"},
 		Float:    [2]string{"36", "39"},
 		Complex:  [2]string{"35", "39"},
@@ -47,6 +48,7 @@ var Options options = options{
 		Nil:      [2]string{"93", "39"},
 		Tip:      [2]string{"2", "22"},
 	},
+	Color: Color,
 }
 
 func Println(a ...any) (n int, err error) {
@@ -61,23 +63,34 @@ func String(o any) string {
 	v := reflect.ValueOf(o)
 	p := getPP()
 	defer p.free()
-	stringify(p, v, &Options, false, true, 0, nil)
+	stringify(p, v, &Default, false, true, 0, nil)
 	return string(p.buf)
 }
 
-func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAliasName bool, level uint, parent *reflect.Value) {
+func New(opt *Options) func(v any) string {
+	return func(o any) string {
+		v := reflect.ValueOf(o)
+		p := getPP()
+		defer p.free()
+		stringify(p, v, opt, false, true, 0, nil)
+		return string(p.buf)
+	}
+}
+
+func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAliasName bool, level uint, parent *reflect.Value) {
+	color := opt.Color
 	colors := opt.ColorMap
 	kind := v.Kind()
 	switch kind {
 	case reflect.Invalid:
 		// var initAny any or var initInter error
-		p.buf.WriteString(nilVal())
+		p.buf.WriteString(nilVal(opt))
 		p.buf.WriteChar('.')
 		p.buf.WriteString(color("(<invalid>)", colors.Tip[0], colors.Tip[1]))
 		return
 	case reflect.Ptr:
 		if v.IsNil() {
-			p.buf.WriteString(nilVal())
+			p.buf.WriteString(nilVal(opt))
 			p.buf.WriteChar('.')
 			p.buf.WriteString(color("", colors.Tip[0], ""))
 			p.buf.WriteChar('(')
@@ -146,8 +159,9 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 				val = color(strconv.FormatInt(v.Int(), 10), colors.Int[0], colors.Int[1])
 			}
 		}
-		if showAliasName && v.Type().Name() != v.Type().Kind().String() {
-			getType(p, v.Type())
+		t := v.Type()
+		if showAliasName && t.Name() != t.Kind().String() {
+			getType(p, t)
 			p.buf.WriteChar('(')
 			p.buf.WriteString(val)
 			p.buf.WriteChar(')')
@@ -158,7 +172,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		stringify(p, v.Elem(), opt, escapeString, showAliasName, level, nil)
 	case reflect.Slice, reflect.Array:
 		if kind == reflect.Slice && v.IsNil() {
-			p.buf.WriteString(nilVal())
+			p.buf.WriteString(nilVal(opt))
 			p.buf.WriteString(color("", colors.Tip[0], ""))
 			p.buf.WriteString(".(")
 			getType(p, v.Type())
@@ -168,7 +182,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		}
 		i := len(p.buf)
 		getType(p, v.Type())
-		if v.Kind() == reflect.Slice {
+		if kind == reflect.Slice {
 			l := strconv.FormatInt(int64(v.Len()), 10)
 			p.buf.Splice(i+1, l)
 			i = len(l) + i
@@ -198,7 +212,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		p.buf.WriteChar(']')
 	case reflect.Map:
 		if v.IsNil() {
-			p.buf.WriteString(nilVal())
+			p.buf.WriteString(nilVal(opt))
 			p.buf.WriteChar('.')
 			p.buf.WriteString(color("", colors.Tip[0], ""))
 			p.buf.WriteChar('(')
@@ -312,7 +326,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		p.buf.WriteChar('}')
 	case reflect.Chan:
 		if v.IsNil() {
-			p.buf.WriteString(nilVal())
+			p.buf.WriteString(nilVal(opt))
 			p.buf.WriteChar('.')
 			p.buf.WriteString(color("", colors.Tip[0], ""))
 			p.buf.WriteChar('(')
@@ -336,7 +350,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		p.buf.WriteString(color("", "", colors.Chan[1]))
 	case reflect.Func:
 		if v.IsNil() {
-			p.buf.WriteString(nilVal())
+			p.buf.WriteString(nilVal(opt))
 			p.buf.WriteChar('.')
 			p.buf.WriteString(color("", colors.Tip[0], ""))
 			p.buf.WriteChar('(')
@@ -445,6 +459,6 @@ func getType(p *pp, t reflect.Type) {
 	}
 }
 
-func nilVal() string {
-	return color("nil", Options.ColorMap.Nil[0], Options.ColorMap.Nil[1])
+func nilVal(opt *Options) string {
+	return opt.Color("nil", opt.ColorMap.Nil[0], opt.ColorMap.Nil[1])
 }

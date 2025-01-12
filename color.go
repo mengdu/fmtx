@@ -45,7 +45,7 @@ func getEnableColor() bool {
 	return (forceColor || envForceColor) || ((isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())) && enableColor)
 }
 
-func color(s string, start string, end string) string {
+func Color(s string, start string, end string) string {
 	if !enableColorFromCache() {
 		return s
 	}

@@ -109,7 +109,7 @@ func TestPrint(t *testing.T) {
 	fmt.Println("")
 	for i := 0; i < c; i++ {
 		start := time.Now()
-		_ = color("%#v\n", "35", "39")
+		_ = Color("%#v\n", "35", "39")
 		fmt.Println(1, time.Since(start).String())
 	}
 	fmt.Println("")

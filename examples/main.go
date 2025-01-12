@@ -182,7 +182,7 @@ func main() {
 	}
 	foo.Loop = &foo
 	fmtx.Println(foo)
-	fmtx.Println(fmtx.Options)
+	fmtx.Println(fmtx.Default)
 	fn := func(a int, b float32, c string, d map[string]any, e []int, f ...[]int) error {
 		return nil
 	}
@@ -195,4 +195,10 @@ func main() {
 	ch2 <- 2
 	fmtx.Println(sendOnlyCh, readOnlyCh, ch1, ch2)
 	fmtx.Println(errors.New("some error"))
+	// fmtx.Println(fmtx.Color(" Hello ", "40", "49"))
+	myOpt := fmtx.Default
+	myOpt.MaxDepth = 2
+	myOpt.ColorMap.Bool = [2]string{"35", "39"}
+	dump := fmtx.New(&myOpt)
+	fmt.Println(dump(true), dump(false))
 }
