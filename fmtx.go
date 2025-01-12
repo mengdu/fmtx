@@ -32,7 +32,7 @@ type ColorMap struct {
 
 var Default Options = Options{
 	MaxDepth:             3,
-	MaxArray:             50,
+	MaxArray:             25,
 	MaxPropertyBreakLine: 10,
 	ShowStructMethod:     true,
 	ColorMap: ColorMap{
