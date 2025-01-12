@@ -102,9 +102,15 @@ func TestPrint(t *testing.T) {
 		cacheEnableColor = 0
 	}()
 	for i := 0; i < c; i++ {
-		start2 := time.Now()
+		start := time.Now()
 		_ = fmt.Sprintf("%#v\n", data)
-		fmt.Println(1, time.Since(start2).String())
+		fmt.Println(1, time.Since(start).String())
+	}
+	fmt.Println("")
+	for i := 0; i < c; i++ {
+		start := time.Now()
+		_ = color("%#v\n", "35", "39")
+		fmt.Println(1, time.Since(start).String())
 	}
 	fmt.Println("")
 	cacheEnableColor = 0

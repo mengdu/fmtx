@@ -3,27 +3,9 @@ package fmtx
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 )
-
-var Options options = options{
-	MaxDepth:             3,
-	MaxArray:             50,
-	MaxPropertyBreakLine: 10,
-	ShowStructMethod:     true,
-	ColorMap: colorMap{
-		Int:      [2]string{"34", "39;49"},
-		Float:    [2]string{"36", "39;49"},
-		String:   [2]string{"32", "39;49"},
-		Bool:     [2]string{"33", "39;49"},
-		Ptr:      [2]string{"33", "39;49"},
-		Property: [2]string{"90", "39;49"},
-		Func:     [2]string{"3;36", "39;49;23"},
-		Chan:     [2]string{"31", "39;49"},
-		Nil:      [2]string{"93", "39;49"},
-		Tip:      [2]string{"2", "22"},
-	},
-}
 
 type options struct {
 	MaxDepth             uint
@@ -36,6 +18,7 @@ type options struct {
 type colorMap struct {
 	Int      [2]string
 	Float    [2]string
+	Complex  [2]string
 	Bool     [2]string
 	String   [2]string
 	Ptr      [2]string
@@ -44,6 +27,26 @@ type colorMap struct {
 	Chan     [2]string
 	Nil      [2]string
 	Tip      [2]string
+}
+
+var Options options = options{
+	MaxDepth:             3,
+	MaxArray:             50,
+	MaxPropertyBreakLine: 10,
+	ShowStructMethod:     true,
+	ColorMap: colorMap{
+		Int:      [2]string{"34", "39"},
+		Float:    [2]string{"36", "39"},
+		Complex:  [2]string{"35", "39"},
+		String:   [2]string{"32", "39"},
+		Bool:     [2]string{"33", "39"},
+		Ptr:      [2]string{"33", "39"},
+		Property: [2]string{"90", "39"},
+		Func:     [2]string{"3;36", "39;23"},
+		Chan:     [2]string{"31", "39"},
+		Nil:      [2]string{"93", "39"},
+		Tip:      [2]string{"2", "22"},
+	},
 }
 
 func Println(a ...any) (n int, err error) {
@@ -64,7 +67,8 @@ func String(o any) string {
 
 func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAliasName bool, level uint, parent *reflect.Value) {
 	colors := opt.ColorMap
-	switch v.Kind() {
+	kind := v.Kind()
+	switch kind {
 	case reflect.Invalid:
 		// var initAny any or var initInter error
 		p.buf.WriteString(nilVal())
@@ -90,7 +94,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		val := v.String()
 		showType := showAliasName && t.Name() != t.Kind().String()
 		if escapeString || showType {
-			val = fmt.Sprintf("%q", val)
+			val = strconv.Quote(val)
 		}
 		if level > 0 || showType || (parent != nil && parent.Kind() == reflect.Ptr) {
 			val = color(val, colors.String[0], colors.String[1])
@@ -120,15 +124,27 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		}
 		p.buf.WriteString(val)
 	case reflect.Complex64, reflect.Complex128:
-		p.buf.WriteString(color(fmt.Sprintf("%v", v), colors.Float[0], colors.Float[1]))
+		val := v.Complex()
+		p.buf.WriteString(color("", colors.Complex[0], ""))
+		p.buf.WriteString(strconv.FormatFloat(real(val), 'f', -1, 64))
+		p.buf.WriteString(strconv.FormatFloat(imag(val), 'f', -1, 64))
+		p.buf.WriteString(color("", "", colors.Complex[1]))
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Float32, reflect.Float64:
 		val := ""
-		if v.Kind() == reflect.Float32 || v.Kind() == reflect.Float64 {
-			val = color(fmt.Sprintf("%v", v), colors.Float[0], colors.Float[1])
+		if kind == reflect.Float32 {
+			val = color(strconv.FormatFloat(v.Float(), 'g', -1, 32), colors.Float[0], colors.Float[1])
+		} else if kind == reflect.Float64 {
+			val = color(strconv.FormatFloat(v.Float(), 'g', -1, 64), colors.Float[0], colors.Float[1])
 		} else {
-			val = color(fmt.Sprintf("%v", v), colors.Int[0], colors.Int[1])
+			if kind == reflect.Uint || kind == reflect.Uint8 ||
+				kind == reflect.Uint16 || kind == reflect.Uint32 ||
+				kind == reflect.Uint64 {
+				val = color(strconv.FormatUint(v.Uint(), 10), colors.Int[0], colors.Int[1])
+			} else {
+				val = color(strconv.FormatInt(v.Int(), 10), colors.Int[0], colors.Int[1])
+			}
 		}
 		if showAliasName && v.Type().Name() != v.Type().Kind().String() {
 			getType(p, v.Type())
@@ -141,7 +157,7 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 	case reflect.Interface:
 		stringify(p, v.Elem(), opt, escapeString, showAliasName, level, nil)
 	case reflect.Slice, reflect.Array:
-		if v.Kind() == reflect.Slice && v.IsNil() {
+		if kind == reflect.Slice && v.IsNil() {
 			p.buf.WriteString(nilVal())
 			p.buf.WriteString(color("", colors.Tip[0], ""))
 			p.buf.WriteString(".(")
@@ -153,7 +169,11 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		i := len(p.buf)
 		getType(p, v.Type())
 		if v.Kind() == reflect.Slice {
-			p.buf.Splice(i+1, fmt.Sprintf("%d/%d", v.Len(), v.Cap()))
+			l := strconv.FormatInt(int64(v.Len()), 10)
+			p.buf.Splice(i+1, l)
+			i = len(l) + i
+			p.buf.Splice(i+1, "/")
+			p.buf.Splice(i+2, strconv.FormatInt(int64(v.Cap()), 10))
 		}
 		if level >= opt.MaxDepth {
 			p.buf.WriteString("{…}")
@@ -306,8 +326,12 @@ func stringify(p *pp, v reflect.Value, opt *options, escapeString bool, showAlia
 		getType(p, v.Type())
 		if v.Cap() > 0 {
 			i := len(p.buf)
-			p.buf.Remove(i-1, 1)
-			p.buf.WriteString(fmt.Sprintf(",%d/%d)", v.Len(), v.Cap()))
+			l := strconv.FormatInt(int64(v.Len()), 10)
+			p.buf.Splice(i-1, ",")
+			p.buf.Splice(i, l)
+			i = len(l) + i
+			p.buf.Splice(i, "/")
+			p.buf.Splice(i+1, strconv.FormatInt(int64(v.Cap()), 10))
 		}
 		p.buf.WriteString(color("", "", colors.Chan[1]))
 	case reflect.Func:
@@ -343,7 +367,7 @@ func getType(p *pp, t reflect.Type) {
 		p.buf.WriteChar('>')
 	case reflect.Array:
 		p.buf.WriteChar('[')
-		p.buf.WriteString(fmt.Sprintf("%d", t.Len()))
+		p.buf.WriteString(strconv.FormatInt(int64(t.Len()), 10))
 		p.buf.WriteChar(']')
 		getType(p, t.Elem())
 	case reflect.Slice:

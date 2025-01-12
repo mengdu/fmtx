@@ -133,7 +133,7 @@ func main() {
 	fmtx.Println("Hello, \nworld", 'a', ptr("Hi \"Tom\""))
 	fmtx.Println(true, false)
 	fmtx.Println(123, 3.14, int32(123), ptr(124))
-	fmtx.Println(123, 3.14, complex64(1+2i), complex(3.5, -4.5))
+	fmtx.Println(123, 3.14, complex64(1+2i), complex(3.14, -2.71))
 	fmtx.Println(MyInt(123), MyFloat(3.14), MyString("string"), MyBool(true))
 	fmtx.Println(ptr(MyInt(123)), ptr(MyFloat(3.14)), ptr(MyString("string")), ptr(MyBool(true)))
 	fmtx.Println(initMap, initArr, initSlice, initChan, initFn, initAny, initErr)

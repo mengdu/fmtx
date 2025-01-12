@@ -2,7 +2,6 @@ package fmtx
 
 import (
 	"os"
-	"strings"
 
 	"github.com/mattn/go-isatty"
 )
@@ -50,14 +49,18 @@ func color(s string, start string, end string) string {
 	if !enableColorFromCache() {
 		return s
 	}
-	arr := []string{"\x1b[", start, "m", s, "\x1b[", end, "m"}
-	if start == "" {
-		arr[0] = ""
-		arr[2] = ""
+	// buf := make([]byte, 0, len(start)+len(s)+len(end))
+	buf := []byte{}
+	if start != "" {
+		buf = append(buf, "\x1b["...)
+		buf = append(buf, start...)
+		buf = append(buf, 'm')
 	}
-	if end == "" {
-		arr[4] = ""
-		arr[6] = ""
+	buf = append(buf, s...)
+	if end != "" {
+		buf = append(buf, "\x1b["...)
+		buf = append(buf, end...)
+		buf = append(buf, 'm')
 	}
-	return strings.Join(arr, "")
+	return string(buf)
 }
