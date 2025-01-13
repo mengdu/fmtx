@@ -354,7 +354,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 			p.buf.WriteChar('.')
 			p.buf.WriteString(color("", colors.Tip[0], ""))
 			p.buf.WriteChar('(')
-			p.buf.WriteString("func(){}")
+			getType(p, v.Type())
 			p.buf.WriteChar(')')
 			p.buf.WriteString(color("", "", colors.Tip[1]))
 			return
@@ -434,8 +434,6 @@ func getType(p *pp, t reflect.Type) {
 				getType(p, t.Out(i))
 			}
 			if outLen > 1 {
-				p.buf.WriteChar(')')
-				p.buf.WriteChar(')')
 				p.buf.WriteChar(')')
 			}
 			p.buf.WriteChar(' ')
