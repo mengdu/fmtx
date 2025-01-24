@@ -1,6 +1,12 @@
 # fmtx
 
+<p align="center">
+  <img src="preview.png" />
+</p>
+
 More intuitive printing values for Golang.
+
+## Usage
 
 ```sh
 go get github.com/mengdu/fmtx
@@ -15,11 +21,13 @@ type Foo struct {
 func main() {
   fmtx.Println([]int{1, 2, 3, 4}) // [4/4]int[1, 2, 3, 4]
   fmtx.Println(map[any]any{"a": 1, "b": 3.14, 1: true, "c": "Hello, \nworld."}) // map<any,any>{"a": 1, "b": 3.14, 1: true, "c": "Hello, \nworld."}
-  fmtx.Println(Foo{}) // main.Foo{Key: 0, Loop: nil.(*main.Foo)}
+  foo := Foo{Key: 123}
+  foo.Loop = &foo
+  fmtx.Println(foo) // main.Foo{Key: 123, Loop: &main.Foo{Key: 123, Loop: &main.Foo{Key: 123, Loop: &main.Foo{…}}}}
 }
 ```
 
-![](preview.png)
+[Examples](examples/main.go)
 
 ## Benchmark
 
