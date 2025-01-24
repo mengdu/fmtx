@@ -175,6 +175,19 @@ func genData() *Data {
 	return data
 }
 
+// func BenchmarkPrintln(b *testing.B) {
+// 	for i := 0; i < b.N; i++ {
+// 		fmt.Println(true, false, 123, 3.14, 'A', "Hello, \nworld.", []int{1, 2, 3}, map[string]any{"a": 1, "b": true})
+// 	}
+// }
+
+// func BenchmarkFmxPrintln(b *testing.B) {
+// 	SetEnableColor(true)
+// 	for i := 0; i < b.N; i++ {
+// 		Println(true, false, 123, 3.14, 'A', "Hello, \nworld.", []int{1, 2, 3}, map[string]any{"a": 1, "b": true})
+// 	}
+// }
+
 func BenchmarkFmtxString(b *testing.B) {
 	SetEnableColor(true)
 	data := genData()

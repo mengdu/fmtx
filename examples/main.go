@@ -179,8 +179,8 @@ func genData() *Data {
 
 func main() {
 	// fmtx.SetEnableColor(true)
-	// fmtx.Options.MaxPropertyBreakLine = 3
-	// fmtx.Options.ShowStructMethod = false
+	// fmtx.Default.MaxPropertyBreakLine = 3
+	// fmtx.Default.ShowStructMethod = false
 	var initMap map[string]int
 	var initArr [2]int
 	var initSlice []int

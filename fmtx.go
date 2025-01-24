@@ -2,18 +2,25 @@ package fmtx
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
 )
 
 type Options struct {
-	MaxDepth             uint
-	MaxArray             int
+	// print max depth of struct, map, slice, array
+	MaxDepth uint
+	// print max array length
+	MaxArray int
+	// max property triggering line breaks
 	MaxPropertyBreakLine int
-	ShowStructMethod     bool
-	ColorMap             ColorMap
-	Color                func(s string, start string, end string) string
+	// show struct method
+	ShowStructMethod bool
+	// default color map
+	ColorMap ColorMap
+	// coustom color function
+	Color func(s string, start string, end string) string
 }
 
 type ColorMap struct {
@@ -51,12 +58,27 @@ var Default Options = Options{
 	Color: Color,
 }
 
+var DefaultWriter = os.Stdout
+
 func Println(a ...any) (n int, err error) {
-	arr := make([]any, len(a))
-	for i, v := range a {
-		arr[i] = String(v)
+	if DefaultWriter == nil {
+		DefaultWriter = os.Stdout
 	}
-	return fmt.Println(arr...)
+	l := len(a)
+	for i, v := range a {
+		n, err = DefaultWriter.WriteString(String(v))
+		if err != nil {
+			return
+		}
+		if i < l-1 {
+			n, err = DefaultWriter.WriteString(" ")
+			if err != nil {
+				return
+			}
+		}
+	}
+	n, err = DefaultWriter.WriteString("\n")
+	return
 }
 
 func String(o any) string {
@@ -67,6 +89,7 @@ func String(o any) string {
 	return string(p.buf)
 }
 
+// create a custom options function
 func New(opt *Options) func(v any) string {
 	return func(o any) string {
 		v := reflect.ValueOf(o)
