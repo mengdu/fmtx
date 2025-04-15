@@ -87,7 +87,7 @@ func String(o any) string {
 	v := reflect.ValueOf(o)
 	p := getPP()
 	defer p.free()
-	stringify(p, v, &Default, false, true, 0, nil)
+	stringify(p, v, &Default, false, 0, nil)
 	return string(p.buf)
 }
 
@@ -97,12 +97,12 @@ func New(opt *Options) func(v any) string {
 		v := reflect.ValueOf(o)
 		p := getPP()
 		defer p.free()
-		stringify(p, v, opt, false, true, 0, nil)
+		stringify(p, v, opt, false, 0, nil)
 		return string(p.buf)
 	}
 }
 
-func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAliasName bool, level uint, parent *reflect.Value) {
+func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, level uint, parent *reflect.Value) {
 	color := opt.Color
 	colors := opt.ColorMap
 	kind := v.Kind()
@@ -131,17 +131,14 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 		if opt.ShowTypeName {
 			p.buf.WriteString(color("&", colors.Ptr[0], colors.Ptr[1]))
 		}
-		stringify(p, v.Elem(), opt, true, showAliasName, level, &v)
+		stringify(p, v.Elem(), opt, level > 0, level, &v)
 		return
 	case reflect.String:
 		t := v.Type()
 		val := v.String()
-		showType := showAliasName && t.Name() != t.Kind().String()
+		showType := opt.ShowTypeName && t.Name() != t.Kind().String()
 		if escapeString || showType {
-			val = strconv.Quote(val)
-		}
-		if level > 0 || showType || (parent != nil && parent.Kind() == reflect.Ptr) {
-			val = color(val, colors.String[0], colors.String[1])
+			val = color(strconv.Quote(val), colors.String[0], colors.String[1])
 		}
 		if showType {
 			getType(p, t)
@@ -159,7 +156,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 		} else {
 			val = color("false", colors.Bool[0], colors.Bool[1])
 		}
-		if opt.ShowTypeName && showAliasName && t.Name() != t.Kind().String() {
+		if opt.ShowTypeName && t.Name() != t.Kind().String() {
 			getType(p, t)
 			p.buf.WriteChar('(')
 			p.buf.WriteString(val)
@@ -191,7 +188,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 			}
 		}
 		t := v.Type()
-		if opt.ShowTypeName && showAliasName && t.Name() != t.Kind().String() {
+		if opt.ShowTypeName && t.Name() != t.Kind().String() {
 			getType(p, t)
 			p.buf.WriteChar('(')
 			p.buf.WriteString(val)
@@ -200,7 +197,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 		}
 		p.buf.WriteString(val)
 	case reflect.Interface:
-		stringify(p, v.Elem(), opt, escapeString, showAliasName, level, nil)
+		stringify(p, v.Elem(), opt, escapeString, level, nil)
 	case reflect.Slice, reflect.Array:
 		if kind == reflect.Slice && v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
@@ -241,7 +238,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 			if i > 0 {
 				p.buf.WriteString(", ")
 			}
-			stringify(p, v.Index(i), opt, true, false, level+1, nil)
+			stringify(p, v.Index(i), opt, true, level+1, nil)
 		}
 		if hasMore {
 			p.buf.WriteString(", …")
@@ -286,9 +283,9 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 					p.buf.WriteString(", ")
 				}
 			}
-			stringify(p, k, opt, true, false, level+1, nil)
+			stringify(p, k, opt, true, level+1, nil)
 			p.buf.WriteString(": ")
-			stringify(p, v.MapIndex(k), opt, true, false, level+1, nil)
+			stringify(p, v.MapIndex(k), opt, true, level+1, nil)
 		}
 		if needBreak {
 			p.buf.WriteChar('\n')
@@ -338,7 +335,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 			}
 			p.buf.WriteString(color(f.Name, colors.Property[0], colors.Property[1]))
 			p.buf.WriteString(": ")
-			stringify(p, v.Field(i), opt, true, false, level+1, nil)
+			stringify(p, v.Field(i), opt, true, level+1, nil)
 		}
 
 		if opt.ShowStructMethod {
@@ -359,7 +356,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 
 				p.buf.WriteString(color(fname, colors.Property[0], colors.Property[1]))
 				p.buf.WriteString(": ")
-				stringify(p, m, opt, true, false, level+1, nil)
+				stringify(p, m, opt, true, level+1, nil)
 			}
 			if needBreak {
 				p.buf.WriteChar('\n')
