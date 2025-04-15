@@ -17,6 +17,8 @@ type Options struct {
 	MaxPropertyBreakLine int
 	// show struct method
 	ShowStructMethod bool
+	// show type name
+	ShowTypeName bool
 	// default color map
 	ColorMap ColorMap
 	// coustom color function
@@ -49,7 +51,7 @@ var Default Options = Options{
 		String:   [2]string{"32", "39"},
 		Bool:     [2]string{"33", "39"},
 		Ptr:      [2]string{"33", "39"},
-		Property: [2]string{"90", "39"},
+		Property: [2]string{"39", "39"},
 		Func:     [2]string{"3;36", "39;23"},
 		Chan:     [2]string{"31", "39"},
 		Nil:      [2]string{"93", "39"},
@@ -108,21 +110,27 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 	case reflect.Invalid:
 		// var initAny any or var initInter error
 		p.buf.WriteString(nilVal(opt))
-		p.buf.WriteChar('.')
-		p.buf.WriteString(color("(<invalid>)", colors.Tip[0], colors.Tip[1]))
+		if opt.ShowTypeName {
+			p.buf.WriteChar('.')
+			p.buf.WriteString(color("(<invalid>)", colors.Tip[0], colors.Tip[1]))
+		}
 		return
 	case reflect.Ptr:
 		if v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
-			p.buf.WriteChar('.')
-			p.buf.WriteString(color("", colors.Tip[0], ""))
-			p.buf.WriteChar('(')
-			getType(p, v.Type())
-			p.buf.WriteChar(')')
-			p.buf.WriteString(color("", "", colors.Tip[1]))
+			if opt.ShowTypeName {
+				p.buf.WriteChar('.')
+				p.buf.WriteString(color("", colors.Tip[0], ""))
+				p.buf.WriteChar('(')
+				getType(p, v.Type())
+				p.buf.WriteChar(')')
+				p.buf.WriteString(color("", "", colors.Tip[1]))
+			}
 			return
 		}
-		p.buf.WriteString(color("&", colors.Ptr[0], colors.Ptr[1]))
+		if opt.ShowTypeName {
+			p.buf.WriteString(color("&", colors.Ptr[0], colors.Ptr[1]))
+		}
 		stringify(p, v.Elem(), opt, true, showAliasName, level, &v)
 		return
 	case reflect.String:
@@ -151,7 +159,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 		} else {
 			val = color("false", colors.Bool[0], colors.Bool[1])
 		}
-		if showAliasName && t.Name() != t.Kind().String() {
+		if opt.ShowTypeName && showAliasName && t.Name() != t.Kind().String() {
 			getType(p, t)
 			p.buf.WriteChar('(')
 			p.buf.WriteString(val)
@@ -183,7 +191,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 			}
 		}
 		t := v.Type()
-		if showAliasName && t.Name() != t.Kind().String() {
+		if opt.ShowTypeName && showAliasName && t.Name() != t.Kind().String() {
 			getType(p, t)
 			p.buf.WriteChar('(')
 			p.buf.WriteString(val)
@@ -196,24 +204,30 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 	case reflect.Slice, reflect.Array:
 		if kind == reflect.Slice && v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
-			p.buf.WriteString(color("", colors.Tip[0], ""))
-			p.buf.WriteString(".(")
-			getType(p, v.Type())
-			p.buf.WriteString(")")
-			p.buf.WriteString(color("", "", colors.Tip[1]))
+			if opt.ShowTypeName {
+				p.buf.WriteString(color("", colors.Tip[0], ""))
+				p.buf.WriteString(".(")
+				getType(p, v.Type())
+				p.buf.WriteString(")")
+				p.buf.WriteString(color("", "", colors.Tip[1]))
+			}
 			return
 		}
-		i := len(p.buf)
-		getType(p, v.Type())
-		if kind == reflect.Slice {
-			l := strconv.FormatInt(int64(v.Len()), 10)
-			p.buf.Splice(i+1, l)
-			i = len(l) + i
-			p.buf.Splice(i+1, "/")
-			p.buf.Splice(i+2, strconv.FormatInt(int64(v.Cap()), 10))
+
+		if opt.ShowTypeName {
+			i := len(p.buf)
+			getType(p, v.Type())
+			if kind == reflect.Slice {
+				l := strconv.FormatInt(int64(v.Len()), 10)
+				p.buf.Splice(i+1, l)
+				i = len(l) + i
+				p.buf.Splice(i+1, "/")
+				p.buf.Splice(i+2, strconv.FormatInt(int64(v.Cap()), 10))
+			}
 		}
+
 		if level >= opt.MaxDepth {
-			p.buf.WriteString("{…}")
+			p.buf.WriteString("[…]")
 			return
 		}
 		n := v.Len()
@@ -236,15 +250,19 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 	case reflect.Map:
 		if v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
-			p.buf.WriteChar('.')
-			p.buf.WriteString(color("", colors.Tip[0], ""))
-			p.buf.WriteChar('(')
-			getType(p, v.Type())
-			p.buf.WriteChar(')')
-			p.buf.WriteString(color("", "", colors.Tip[1]))
+			if opt.ShowTypeName {
+				p.buf.WriteChar('.')
+				p.buf.WriteString(color("", colors.Tip[0], ""))
+				p.buf.WriteChar('(')
+				getType(p, v.Type())
+				p.buf.WriteChar(')')
+				p.buf.WriteString(color("", "", colors.Tip[1]))
+			}
 			return
 		}
-		getType(p, v.Type())
+		if opt.ShowTypeName {
+			getType(p, v.Type())
+		}
 		if level >= opt.MaxDepth {
 			p.buf.WriteString("{…}")
 			return
@@ -278,7 +296,9 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 		}
 		p.buf.WriteChar('}')
 	case reflect.Struct:
-		getType(p, v.Type())
+		if opt.ShowTypeName {
+			getType(p, v.Type())
+		}
 		if level >= opt.MaxDepth {
 			p.buf.WriteString("{…}")
 			return
@@ -350,12 +370,14 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 	case reflect.Chan:
 		if v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
-			p.buf.WriteChar('.')
-			p.buf.WriteString(color("", colors.Tip[0], ""))
-			p.buf.WriteChar('(')
-			getType(p, v.Type())
-			p.buf.WriteChar(')')
-			p.buf.WriteString(color("", "", colors.Tip[1]))
+			if opt.ShowTypeName {
+				p.buf.WriteChar('.')
+				p.buf.WriteString(color("", colors.Tip[0], ""))
+				p.buf.WriteChar('(')
+				getType(p, v.Type())
+				p.buf.WriteChar(')')
+				p.buf.WriteString(color("", "", colors.Tip[1]))
+			}
 			return
 		}
 
@@ -374,12 +396,14 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 	case reflect.Func:
 		if v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
-			p.buf.WriteChar('.')
-			p.buf.WriteString(color("", colors.Tip[0], ""))
-			p.buf.WriteChar('(')
-			getType(p, v.Type())
-			p.buf.WriteChar(')')
-			p.buf.WriteString(color("", "", colors.Tip[1]))
+			if opt.ShowTypeName {
+				p.buf.WriteChar('.')
+				p.buf.WriteString(color("", colors.Tip[0], ""))
+				p.buf.WriteChar('(')
+				getType(p, v.Type())
+				p.buf.WriteChar(')')
+				p.buf.WriteString(color("", "", colors.Tip[1]))
+			}
 			return
 		}
 		p.buf.WriteString(color("", colors.Func[0], ""))
