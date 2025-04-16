@@ -24,6 +24,8 @@ type Options struct {
 	ColorMap ColorMap
 	// coustom color function
 	Color func(s string, start string, end string) string
+	// custom prints
+	Prints []func(v any, opt Options) (string, bool)
 }
 
 type ColorMap struct {
@@ -109,6 +111,16 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, level ui
 	color := opt.Color
 	colors := opt.ColorMap
 	kind := v.Kind()
+
+	if len(opt.Prints) > 0 && kind != reflect.Invalid && v.CanInterface() {
+		for _, printer := range opt.Prints {
+			if s, ok := printer(v.Interface(), *opt); ok {
+				p.buf.WriteString(s)
+				return
+			}
+		}
+	}
+
 	switch kind {
 	case reflect.Invalid:
 		// var initAny any or var initInter error
