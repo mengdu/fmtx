@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -33,6 +34,7 @@ type ColorMap struct {
 	String   [2]string
 	Ptr      [2]string
 	Property [2]string
+	FuncTag  [2]string
 	Func     [2]string
 	Chan     [2]string
 	Nil      [2]string
@@ -52,6 +54,7 @@ var Default Options = Options{
 		Bool:     [2]string{"33", "39"},
 		Ptr:      [2]string{"33", "39"},
 		Property: [2]string{"39", "39"},
+		FuncTag:  [2]string{"3;33", "39;23"},
 		Func:     [2]string{"3;36", "39;23"},
 		Chan:     [2]string{"31", "39"},
 		Nil:      [2]string{"93", "39"},
@@ -343,8 +346,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, level ui
 			for i := 0; i < numMethod; i++ {
 				m := val.Method(i)
 				fname := typ.Method(i).Name
-
-				if i > 0 || numMethod > 0 {
+				if i > 0 || numField > 0 {
 					if needBreak {
 						p.buf.WriteString(",\n")
 						p.buf.WriteString(indent)
@@ -403,52 +405,36 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, level ui
 			}
 			return
 		}
-		p.buf.WriteString(color("", colors.Func[0], ""))
-		getType(p, v.Type())
-		p.buf.WriteString(color("", "", colors.Func[1]))
-		return
-	default:
-		p.buf.WriteString(fmt.Sprintf("%v", v))
-	}
-}
+		fname := ""
+		fn := runtime.FuncForPC(v.Pointer())
+		if fn != nil {
+			fname = fn.Name()
+			if fname == "reflect.methodValueCall" {
+				fname = ""
+			}
 
-func getType(p *pp, t reflect.Type) {
-	switch t.Kind() {
-	case reflect.Ptr:
-		p.buf.WriteChar('*')
-		getType(p, t.Elem())
-	case reflect.Map:
-		p.buf.WriteString("map<")
-		getType(p, t.Key())
-		p.buf.WriteChar(',')
-		getType(p, t.Elem())
-		p.buf.WriteChar('>')
-	case reflect.Array:
-		p.buf.WriteChar('[')
-		p.buf.WriteString(strconv.FormatInt(int64(t.Len()), 10))
-		p.buf.WriteChar(']')
-		getType(p, t.Elem())
-	case reflect.Slice:
-		p.buf.WriteString("[]")
-		getType(p, t.Elem())
-	case reflect.Struct:
-		// Anonymous struct
-		if t.Name() == "" {
-			return
+			if fname != "" && !opt.ShowTypeName {
+				if strings.HasSuffix(fname, "[...]") {
+					arr := strings.Split(fname[0:len(fname)-5], ".")
+					fname = arr[len(arr)-1] + "[...]"
+				} else if strings.HasSuffix(fname, "-fm") {
+					arr := strings.Split(fname[0:len(fname)-3], ".")
+					fname = arr[len(arr)-1]
+				} else {
+					arr := strings.Split(fname, ".")
+					if len(arr) > 1 {
+						fname = arr[len(arr)-1]
+					}
+				}
+			}
 		}
-		p.buf.WriteString(t.String())
-	case reflect.Chan:
-		p.buf.WriteString("chan")
-		if t.ChanDir() == reflect.RecvDir {
-			p.buf.WriteString("->")
-		} else if t.ChanDir() == reflect.SendDir {
-			p.buf.WriteString("<-")
+		t := v.Type()
+		p.buf.WriteString(color("f ", colors.FuncTag[0], colors.FuncTag[1]))
+		p.buf.WriteString(color("", colors.Func[0], ""))
+		if fname != "" {
+			p.buf.WriteString(fname)
 		}
-		p.buf.WriteChar('(')
-		getType(p, t.Elem())
-		p.buf.WriteChar(')')
-	case reflect.Func:
-		p.buf.WriteString("[func(")
+		p.buf.WriteString("(")
 		inLen := t.NumIn()
 		for i := 0; i < inLen; i++ {
 			if i == inLen-1 && t.IsVariadic() {
@@ -482,7 +468,85 @@ func getType(p *pp, t reflect.Type) {
 			}
 			p.buf.WriteChar(' ')
 		}
-		p.buf.WriteString("{}]")
+		p.buf.WriteString("{}")
+		p.buf.WriteString(color("", "", colors.Func[1]))
+		return
+	default:
+		p.buf.WriteString(fmt.Sprintf("%v", v))
+	}
+}
+
+func getType(p *pp, t reflect.Type) {
+	switch t.Kind() {
+	case reflect.Ptr:
+		p.buf.WriteChar('*')
+		getType(p, t.Elem())
+	case reflect.Map:
+		p.buf.WriteString("map<")
+		getType(p, t.Key())
+		p.buf.WriteString(", ")
+		getType(p, t.Elem())
+		p.buf.WriteChar('>')
+	case reflect.Array:
+		p.buf.WriteChar('[')
+		p.buf.WriteString(strconv.FormatInt(int64(t.Len()), 10))
+		p.buf.WriteChar(']')
+		getType(p, t.Elem())
+	case reflect.Slice:
+		p.buf.WriteString("[]")
+		getType(p, t.Elem())
+	case reflect.Struct:
+		// Anonymous struct
+		if t.Name() == "" {
+			return
+		}
+		p.buf.WriteString(t.String())
+	case reflect.Chan:
+		p.buf.WriteString("chan")
+		if t.ChanDir() == reflect.RecvDir {
+			p.buf.WriteString("->")
+		} else if t.ChanDir() == reflect.SendDir {
+			p.buf.WriteString("<-")
+		}
+		p.buf.WriteChar('(')
+		getType(p, t.Elem())
+		p.buf.WriteChar(')')
+	case reflect.Func:
+		p.buf.WriteString("func (")
+		inLen := t.NumIn()
+		for i := 0; i < inLen; i++ {
+			if i == inLen-1 && t.IsVariadic() {
+				l := len(p.buf)
+				p.buf.WriteString(", ...")
+				getType(p, t.In(i))
+				p.buf.Remove(l, 2) // remove "[]"
+			} else {
+				if i > 0 {
+					p.buf.WriteString(", ")
+				}
+				getType(p, t.In(i))
+			}
+		}
+		p.buf.WriteChar(')')
+
+		outLen := t.NumOut()
+		if outLen > 0 {
+			p.buf.WriteChar(' ')
+			if outLen > 1 {
+				p.buf.WriteChar('(')
+			}
+			for i := 0; i < outLen; i++ {
+				if i > 0 {
+					p.buf.WriteString(", ")
+				}
+				getType(p, t.Out(i))
+			}
+			if outLen > 1 {
+				p.buf.WriteChar(')')
+			}
+			p.buf.WriteChar(' ')
+		}
+		p.buf.WriteString("{}")
 	case reflect.Interface:
 		if t.Name() != "" {
 			if t.PkgPath() != "" {
