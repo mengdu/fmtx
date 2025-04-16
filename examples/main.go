@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/mengdu/fmtx"
 )
@@ -177,10 +179,22 @@ func genData() *Data {
 	return data
 }
 
+func TimePrint(v any, opt fmtx.Options) (string, bool) {
+	if vv, ok := v.(time.Time); ok {
+		return opt.Color(vv.Format(time.RFC3339), opt.ColorMap.Int[0], opt.ColorMap.Int[1]), true
+	} else if vv, ok := v.(time.Duration); ok {
+		return opt.Color(vv.String(), opt.ColorMap.Int[0], opt.ColorMap.Int[1]), true
+	} else if vv, ok := v.(error); ok {
+		return opt.Color("error("+strconv.Quote(vv.Error())+")", "31", "39"), true
+	}
+	return "", false
+}
+
 func main() {
 	// fmtx.SetEnableColor(true)
 	// fmtx.Default.MaxPropertyBreakLine = 3
 	// fmtx.Default.ShowStructMethod = false
+	fmtx.Default.Prints = append(fmtx.Default.Prints, TimePrint)
 	var initMap map[string]int
 	var initArr [2]int
 	var initSlice []int

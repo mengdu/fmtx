@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -17,10 +18,14 @@ type Options struct {
 	MaxPropertyBreakLine int
 	// show struct method
 	ShowStructMethod bool
+	// show type name
+	ShowTypeName bool
 	// default color map
 	ColorMap ColorMap
 	// coustom color function
 	Color func(s string, start string, end string) string
+	// custom prints
+	Prints []func(v any, opt Options) (string, bool)
 }
 
 type ColorMap struct {
@@ -31,6 +36,7 @@ type ColorMap struct {
 	String   [2]string
 	Ptr      [2]string
 	Property [2]string
+	FuncTag  [2]string
 	Func     [2]string
 	Chan     [2]string
 	Nil      [2]string
@@ -49,7 +55,8 @@ var Default Options = Options{
 		String:   [2]string{"32", "39"},
 		Bool:     [2]string{"33", "39"},
 		Ptr:      [2]string{"33", "39"},
-		Property: [2]string{"90", "39"},
+		Property: [2]string{"39", "39"},
+		FuncTag:  [2]string{"3;33", "39;23"},
 		Func:     [2]string{"3;36", "39;23"},
 		Chan:     [2]string{"31", "39"},
 		Nil:      [2]string{"93", "39"},
@@ -85,7 +92,7 @@ func String(o any) string {
 	v := reflect.ValueOf(o)
 	p := getPP()
 	defer p.free()
-	stringify(p, v, &Default, false, true, 0, nil)
+	stringify(p, v, &Default, false, 0, nil)
 	return string(p.buf)
 }
 
@@ -95,45 +102,58 @@ func New(opt *Options) func(v any) string {
 		v := reflect.ValueOf(o)
 		p := getPP()
 		defer p.free()
-		stringify(p, v, opt, false, true, 0, nil)
+		stringify(p, v, opt, false, 0, nil)
 		return string(p.buf)
 	}
 }
 
-func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAliasName bool, level uint, parent *reflect.Value) {
+func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, level uint, parent *reflect.Value) {
 	color := opt.Color
 	colors := opt.ColorMap
 	kind := v.Kind()
+
+	if len(opt.Prints) > 0 && kind != reflect.Invalid && v.CanInterface() {
+		for _, printer := range opt.Prints {
+			if s, ok := printer(v.Interface(), *opt); ok {
+				p.buf.WriteString(s)
+				return
+			}
+		}
+	}
+
 	switch kind {
 	case reflect.Invalid:
 		// var initAny any or var initInter error
 		p.buf.WriteString(nilVal(opt))
-		p.buf.WriteChar('.')
-		p.buf.WriteString(color("(<invalid>)", colors.Tip[0], colors.Tip[1]))
+		if opt.ShowTypeName {
+			p.buf.WriteChar('.')
+			p.buf.WriteString(color("(<invalid>)", colors.Tip[0], colors.Tip[1]))
+		}
 		return
 	case reflect.Ptr:
 		if v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
-			p.buf.WriteChar('.')
-			p.buf.WriteString(color("", colors.Tip[0], ""))
-			p.buf.WriteChar('(')
-			getType(p, v.Type())
-			p.buf.WriteChar(')')
-			p.buf.WriteString(color("", "", colors.Tip[1]))
+			if opt.ShowTypeName {
+				p.buf.WriteChar('.')
+				p.buf.WriteString(color("", colors.Tip[0], ""))
+				p.buf.WriteChar('(')
+				getType(p, v.Type())
+				p.buf.WriteChar(')')
+				p.buf.WriteString(color("", "", colors.Tip[1]))
+			}
 			return
 		}
-		p.buf.WriteString(color("&", colors.Ptr[0], colors.Ptr[1]))
-		stringify(p, v.Elem(), opt, true, showAliasName, level, &v)
+		if opt.ShowTypeName {
+			p.buf.WriteString(color("&", colors.Ptr[0], colors.Ptr[1]))
+		}
+		stringify(p, v.Elem(), opt, level > 0, level, &v)
 		return
 	case reflect.String:
 		t := v.Type()
 		val := v.String()
-		showType := showAliasName && t.Name() != t.Kind().String()
+		showType := opt.ShowTypeName && t.Name() != t.Kind().String()
 		if escapeString || showType {
-			val = strconv.Quote(val)
-		}
-		if level > 0 || showType || (parent != nil && parent.Kind() == reflect.Ptr) {
-			val = color(val, colors.String[0], colors.String[1])
+			val = color(strconv.Quote(val), colors.String[0], colors.String[1])
 		}
 		if showType {
 			getType(p, t)
@@ -151,7 +171,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 		} else {
 			val = color("false", colors.Bool[0], colors.Bool[1])
 		}
-		if showAliasName && t.Name() != t.Kind().String() {
+		if opt.ShowTypeName && t.Name() != t.Kind().String() {
 			getType(p, t)
 			p.buf.WriteChar('(')
 			p.buf.WriteString(val)
@@ -183,7 +203,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 			}
 		}
 		t := v.Type()
-		if showAliasName && t.Name() != t.Kind().String() {
+		if opt.ShowTypeName && t.Name() != t.Kind().String() {
 			getType(p, t)
 			p.buf.WriteChar('(')
 			p.buf.WriteString(val)
@@ -192,28 +212,34 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 		}
 		p.buf.WriteString(val)
 	case reflect.Interface:
-		stringify(p, v.Elem(), opt, escapeString, showAliasName, level, nil)
+		stringify(p, v.Elem(), opt, escapeString, level, nil)
 	case reflect.Slice, reflect.Array:
 		if kind == reflect.Slice && v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
-			p.buf.WriteString(color("", colors.Tip[0], ""))
-			p.buf.WriteString(".(")
-			getType(p, v.Type())
-			p.buf.WriteString(")")
-			p.buf.WriteString(color("", "", colors.Tip[1]))
+			if opt.ShowTypeName {
+				p.buf.WriteString(color("", colors.Tip[0], ""))
+				p.buf.WriteString(".(")
+				getType(p, v.Type())
+				p.buf.WriteString(")")
+				p.buf.WriteString(color("", "", colors.Tip[1]))
+			}
 			return
 		}
-		i := len(p.buf)
-		getType(p, v.Type())
-		if kind == reflect.Slice {
-			l := strconv.FormatInt(int64(v.Len()), 10)
-			p.buf.Splice(i+1, l)
-			i = len(l) + i
-			p.buf.Splice(i+1, "/")
-			p.buf.Splice(i+2, strconv.FormatInt(int64(v.Cap()), 10))
+
+		if opt.ShowTypeName {
+			i := len(p.buf)
+			getType(p, v.Type())
+			if kind == reflect.Slice {
+				l := strconv.FormatInt(int64(v.Len()), 10)
+				p.buf.Splice(i+1, l)
+				i = len(l) + i
+				p.buf.Splice(i+1, "/")
+				p.buf.Splice(i+2, strconv.FormatInt(int64(v.Cap()), 10))
+			}
 		}
+
 		if level >= opt.MaxDepth {
-			p.buf.WriteString("{…}")
+			p.buf.WriteString("[…]")
 			return
 		}
 		n := v.Len()
@@ -227,7 +253,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 			if i > 0 {
 				p.buf.WriteString(", ")
 			}
-			stringify(p, v.Index(i), opt, true, false, level+1, nil)
+			stringify(p, v.Index(i), opt, true, level+1, nil)
 		}
 		if hasMore {
 			p.buf.WriteString(", …")
@@ -236,15 +262,19 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 	case reflect.Map:
 		if v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
-			p.buf.WriteChar('.')
-			p.buf.WriteString(color("", colors.Tip[0], ""))
-			p.buf.WriteChar('(')
-			getType(p, v.Type())
-			p.buf.WriteChar(')')
-			p.buf.WriteString(color("", "", colors.Tip[1]))
+			if opt.ShowTypeName {
+				p.buf.WriteChar('.')
+				p.buf.WriteString(color("", colors.Tip[0], ""))
+				p.buf.WriteChar('(')
+				getType(p, v.Type())
+				p.buf.WriteChar(')')
+				p.buf.WriteString(color("", "", colors.Tip[1]))
+			}
 			return
 		}
-		getType(p, v.Type())
+		if opt.ShowTypeName {
+			getType(p, v.Type())
+		}
 		if level >= opt.MaxDepth {
 			p.buf.WriteString("{…}")
 			return
@@ -268,9 +298,9 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 					p.buf.WriteString(", ")
 				}
 			}
-			stringify(p, k, opt, true, false, level+1, nil)
+			stringify(p, k, opt, true, level+1, nil)
 			p.buf.WriteString(": ")
-			stringify(p, v.MapIndex(k), opt, true, false, level+1, nil)
+			stringify(p, v.MapIndex(k), opt, true, level+1, nil)
 		}
 		if needBreak {
 			p.buf.WriteChar('\n')
@@ -278,7 +308,9 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 		}
 		p.buf.WriteChar('}')
 	case reflect.Struct:
-		getType(p, v.Type())
+		if opt.ShowTypeName {
+			getType(p, v.Type())
+		}
 		if level >= opt.MaxDepth {
 			p.buf.WriteString("{…}")
 			return
@@ -318,7 +350,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 			}
 			p.buf.WriteString(color(f.Name, colors.Property[0], colors.Property[1]))
 			p.buf.WriteString(": ")
-			stringify(p, v.Field(i), opt, true, false, level+1, nil)
+			stringify(p, v.Field(i), opt, true, level+1, nil)
 		}
 
 		if opt.ShowStructMethod {
@@ -326,8 +358,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 			for i := 0; i < numMethod; i++ {
 				m := val.Method(i)
 				fname := typ.Method(i).Name
-
-				if i > 0 || numMethod > 0 {
+				if i > 0 || numField > 0 {
 					if needBreak {
 						p.buf.WriteString(",\n")
 						p.buf.WriteString(indent)
@@ -339,7 +370,7 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 
 				p.buf.WriteString(color(fname, colors.Property[0], colors.Property[1]))
 				p.buf.WriteString(": ")
-				stringify(p, m, opt, true, false, level+1, nil)
+				stringify(p, m, opt, true, level+1, nil)
 			}
 			if needBreak {
 				p.buf.WriteChar('\n')
@@ -350,12 +381,14 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 	case reflect.Chan:
 		if v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
-			p.buf.WriteChar('.')
-			p.buf.WriteString(color("", colors.Tip[0], ""))
-			p.buf.WriteChar('(')
-			getType(p, v.Type())
-			p.buf.WriteChar(')')
-			p.buf.WriteString(color("", "", colors.Tip[1]))
+			if opt.ShowTypeName {
+				p.buf.WriteChar('.')
+				p.buf.WriteString(color("", colors.Tip[0], ""))
+				p.buf.WriteChar('(')
+				getType(p, v.Type())
+				p.buf.WriteChar(')')
+				p.buf.WriteString(color("", "", colors.Tip[1]))
+			}
 			return
 		}
 
@@ -374,60 +407,46 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, showAlia
 	case reflect.Func:
 		if v.IsNil() {
 			p.buf.WriteString(nilVal(opt))
-			p.buf.WriteChar('.')
-			p.buf.WriteString(color("", colors.Tip[0], ""))
-			p.buf.WriteChar('(')
-			getType(p, v.Type())
-			p.buf.WriteChar(')')
-			p.buf.WriteString(color("", "", colors.Tip[1]))
+			if opt.ShowTypeName {
+				p.buf.WriteChar('.')
+				p.buf.WriteString(color("", colors.Tip[0], ""))
+				p.buf.WriteChar('(')
+				getType(p, v.Type())
+				p.buf.WriteChar(')')
+				p.buf.WriteString(color("", "", colors.Tip[1]))
+			}
 			return
 		}
-		p.buf.WriteString(color("", colors.Func[0], ""))
-		getType(p, v.Type())
-		p.buf.WriteString(color("", "", colors.Func[1]))
-		return
-	default:
-		p.buf.WriteString(fmt.Sprintf("%v", v))
-	}
-}
+		fname := ""
+		fn := runtime.FuncForPC(v.Pointer())
+		if fn != nil {
+			fname = fn.Name()
+			if fname == "reflect.methodValueCall" {
+				fname = ""
+			}
 
-func getType(p *pp, t reflect.Type) {
-	switch t.Kind() {
-	case reflect.Ptr:
-		p.buf.WriteChar('*')
-		getType(p, t.Elem())
-	case reflect.Map:
-		p.buf.WriteString("map<")
-		getType(p, t.Key())
-		p.buf.WriteChar(',')
-		getType(p, t.Elem())
-		p.buf.WriteChar('>')
-	case reflect.Array:
-		p.buf.WriteChar('[')
-		p.buf.WriteString(strconv.FormatInt(int64(t.Len()), 10))
-		p.buf.WriteChar(']')
-		getType(p, t.Elem())
-	case reflect.Slice:
-		p.buf.WriteString("[]")
-		getType(p, t.Elem())
-	case reflect.Struct:
-		// Anonymous struct
-		if t.Name() == "" {
-			return
+			if fname != "" && !opt.ShowTypeName {
+				if strings.HasSuffix(fname, "[...]") {
+					arr := strings.Split(fname[0:len(fname)-5], ".")
+					fname = arr[len(arr)-1] + "[...]"
+				} else if strings.HasSuffix(fname, "-fm") {
+					arr := strings.Split(fname[0:len(fname)-3], ".")
+					fname = arr[len(arr)-1]
+				} else {
+					arr := strings.Split(fname, ".")
+					if len(arr) > 1 {
+						fname = arr[len(arr)-1]
+					}
+				}
+			}
 		}
-		p.buf.WriteString(t.String())
-	case reflect.Chan:
-		p.buf.WriteString("chan")
-		if t.ChanDir() == reflect.RecvDir {
-			p.buf.WriteString("->")
-		} else if t.ChanDir() == reflect.SendDir {
-			p.buf.WriteString("<-")
+		t := v.Type()
+		p.buf.WriteString(color("f ", colors.FuncTag[0], colors.FuncTag[1]))
+		p.buf.WriteString(color("", colors.Func[0], ""))
+		if fname != "" {
+			p.buf.WriteString(fname)
 		}
-		p.buf.WriteChar('(')
-		getType(p, t.Elem())
-		p.buf.WriteChar(')')
-	case reflect.Func:
-		p.buf.WriteString("[func(")
+		p.buf.WriteString("(")
 		inLen := t.NumIn()
 		for i := 0; i < inLen; i++ {
 			if i == inLen-1 && t.IsVariadic() {
@@ -461,7 +480,85 @@ func getType(p *pp, t reflect.Type) {
 			}
 			p.buf.WriteChar(' ')
 		}
-		p.buf.WriteString("{}]")
+		p.buf.WriteString("{}")
+		p.buf.WriteString(color("", "", colors.Func[1]))
+		return
+	default:
+		p.buf.WriteString(fmt.Sprintf("%v", v))
+	}
+}
+
+func getType(p *pp, t reflect.Type) {
+	switch t.Kind() {
+	case reflect.Ptr:
+		p.buf.WriteChar('*')
+		getType(p, t.Elem())
+	case reflect.Map:
+		p.buf.WriteString("map<")
+		getType(p, t.Key())
+		p.buf.WriteString(", ")
+		getType(p, t.Elem())
+		p.buf.WriteChar('>')
+	case reflect.Array:
+		p.buf.WriteChar('[')
+		p.buf.WriteString(strconv.FormatInt(int64(t.Len()), 10))
+		p.buf.WriteChar(']')
+		getType(p, t.Elem())
+	case reflect.Slice:
+		p.buf.WriteString("[]")
+		getType(p, t.Elem())
+	case reflect.Struct:
+		// Anonymous struct
+		if t.Name() == "" {
+			return
+		}
+		p.buf.WriteString(t.String())
+	case reflect.Chan:
+		p.buf.WriteString("chan")
+		if t.ChanDir() == reflect.RecvDir {
+			p.buf.WriteString("->")
+		} else if t.ChanDir() == reflect.SendDir {
+			p.buf.WriteString("<-")
+		}
+		p.buf.WriteChar('(')
+		getType(p, t.Elem())
+		p.buf.WriteChar(')')
+	case reflect.Func:
+		p.buf.WriteString("func (")
+		inLen := t.NumIn()
+		for i := 0; i < inLen; i++ {
+			if i == inLen-1 && t.IsVariadic() {
+				l := len(p.buf)
+				p.buf.WriteString(", ...")
+				getType(p, t.In(i))
+				p.buf.Remove(l, 2) // remove "[]"
+			} else {
+				if i > 0 {
+					p.buf.WriteString(", ")
+				}
+				getType(p, t.In(i))
+			}
+		}
+		p.buf.WriteChar(')')
+
+		outLen := t.NumOut()
+		if outLen > 0 {
+			p.buf.WriteChar(' ')
+			if outLen > 1 {
+				p.buf.WriteChar('(')
+			}
+			for i := 0; i < outLen; i++ {
+				if i > 0 {
+					p.buf.WriteString(", ")
+				}
+				getType(p, t.Out(i))
+			}
+			if outLen > 1 {
+				p.buf.WriteChar(')')
+			}
+			p.buf.WriteChar(' ')
+		}
+		p.buf.WriteString("{}")
 	case reflect.Interface:
 		if t.Name() != "" {
 			if t.PkgPath() != "" {
