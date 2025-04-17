@@ -193,7 +193,7 @@ func TimePrint(v any, opt fmtx.Options) (string, bool) {
 func main() {
 	// fmtx.SetEnableColor(true)
 	// fmtx.Default.MaxPropertyBreakLine = 3
-	// fmtx.Default.ShowStructMethod = false
+	// fmtx.Default.ShowStructMethod = true
 	fmtx.Default.Prints = append(fmtx.Default.Prints, TimePrint)
 	var initMap map[string]int
 	var initArr [2]int

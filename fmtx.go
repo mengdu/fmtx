@@ -47,7 +47,6 @@ var Default Options = Options{
 	MaxDepth:             3,
 	MaxArray:             25,
 	MaxPropertyBreakLine: 10,
-	ShowStructMethod:     true,
 	ColorMap: ColorMap{
 		Int:      [2]string{"34", "39"},
 		Float:    [2]string{"36", "39"},
@@ -339,6 +338,9 @@ func stringify(p *pp, v reflect.Value, opt *Options, escapeString bool, level ui
 
 		for i := 0; i < numField; i++ {
 			f := v.Type().Field(i)
+			if f.Type.Kind() == reflect.Func && !opt.ShowStructMethod {
+				continue
+			}
 			if i > 0 {
 				if needBreak {
 					p.buf.WriteString(",\n")
